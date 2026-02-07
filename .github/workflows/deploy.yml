@@ -76,3 +76,15 @@ jobs:
           echo "✅ Autonomous Butler Core deployed successfully!"
           echo "Image: ghcr.io/${{ github.repository }}:latest"
           echo "Commit: ${{ github.sha }}"
+
+  setup-cluster:
+    name: Setup Kubernetes Cluster
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Make setup script executable
+        run: chmod +x setup-cluster.sh
+      
+      - name: Run cluster setup
+        run: ./setup-cluster.sh
