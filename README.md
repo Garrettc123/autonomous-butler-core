@@ -6,16 +6,39 @@
 
 This system works with **pure Kubernetes manifests** - Helm is optional!
 
+## 🚀 Quick Start (3 Steps)
+
 ```bash
-# Quick deploy (no Helm needed)
+# 1. Clone
 git clone https://github.com/Garrettc123/autonomous-butler-core.git
 cd autonomous-butler-core
+
+# 2. Setup cluster (auto-detects or installs minikube)
+./setup-cluster.sh
+
+# 3. Deploy everything
 cp k8s/secrets.yaml.template k8s/secrets.yaml
-# Edit secrets, then:
+# Edit secrets.yaml with your API keys, then:
 ./deploy-no-helm.sh
 ```
 
-## 🚀 Features
+**That's it!** Access at `http://localhost:8000` after port-forwarding.
+
+---
+
+## ⚠️ Got "connection refused" error?
+
+**Run this first:**
+```bash
+chmod +x setup-cluster.sh
+./setup-cluster.sh
+```
+
+This auto-detects or installs a local Kubernetes cluster (minikube/kind/k3d).
+
+---
+
+## ✨ Features
 
 - ✅ **Zero-touch deployments** - Code → Production automatically
 - ✅ **Self-healing infrastructure** - Auto-fix issues in 3 seconds
@@ -24,12 +47,16 @@ cp k8s/secrets.yaml.template k8s/secrets.yaml
 - ✅ **Security scanning** - Auto-patch CVEs within 24 hours
 - ✅ **Project management** - GitHub ↔ Linear sync
 
-## 📖 Documentation
+## 📊 Proven Results
 
-- **[Quick Start Guide](docs/QUICKSTART.md)** ← Start here!
-- [Install Helm (Optional)](docs/INSTALL_HELM.md)
-- [Architecture](docs/architecture.md)
-- [API Reference](docs/api.md)
+| Metric | Performance |
+|--------|-------------|
+| Uptime | 99.99% |
+| Deploy time | 12 minutes |
+| Payment recovery | 73% success |
+| Churn reduction | 45% |
+| Support auto-response | 87% |
+| Cost savings | 67% (vs manual) |
 
 ## 🏗️ Architecture
 
@@ -46,36 +73,32 @@ Event Sources → Event Mesh (Kafka) → Butler Orchestrator → 6 AI Agents →
 5. **PM Agent** - Ticket automation, sprint reports
 6. **Support Agent** - RAG Q&A, auto-responses
 
-## 🎯 Quick Deploy Options
+## 📖 Documentation
+
+- **[Quick Start Guide](docs/QUICKSTART.md)** ← Start here!
+- **[Troubleshooting](docs/TROUBLESHOOTING.md)** ← Connection issues?
+- [Install Helm (Optional)](docs/INSTALL_HELM.md)
+- [Architecture](docs/architecture.md)
+- [API Reference](docs/api.md)
+
+## 🎯 Deployment Options
 
 ### Option 1: Docker Compose (Local)
 ```bash
 cp .env.example .env
 docker-compose up -d
-curl http://localhost:8000/health
 ```
 
-### Option 2: Kubernetes (No Helm)
+### Option 2: Kubernetes (No Helm) ⭐
 ```bash
-cp k8s/secrets.yaml.template k8s/secrets.yaml
-./deploy-no-helm.sh
+./setup-cluster.sh      # One-time setup
+./deploy-no-helm.sh     # Deploy
 ```
 
 ### Option 3: Kubernetes (With Helm)
 ```bash
 ./deploy-all.sh
 ```
-
-## 📊 Proven Results
-
-| Metric | Performance |
-|--------|-------------|
-| Uptime | 99.99% |
-| Deploy time | 12 minutes |
-| Payment recovery | 73% success rate |
-| Churn reduction | 45% |
-| Support auto-response | 87% |
-| Cost savings | 67% (vs manual) |
 
 ## 🔗 Related Projects
 

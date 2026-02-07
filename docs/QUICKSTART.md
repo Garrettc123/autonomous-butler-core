@@ -5,16 +5,41 @@
 ### Required
 - ✅ **kubectl** - Kubernetes CLI ([install](https://kubernetes.io/docs/tasks/tools/))
 - ✅ **Docker** - Container runtime ([install](https://docs.docker.com/get-docker/))
-- ✅ **Kubernetes cluster** - Local (minikube/kind) or cloud (EKS/GKE/AKS)
+- ✅ **Kubernetes cluster** - We'll help you set this up!
 
 ### Optional
 - ⚪ **Helm** - NOT required! ([install guide](INSTALL_HELM.md))
+
+---
+
+## Step 0: Set Up Kubernetes Cluster (If Needed)
+
+**Run this first if you get "connection refused" errors:**
+
+```bash
+git clone https://github.com/Garrettc123/autonomous-butler-core.git
+cd autonomous-butler-core
+
+# Auto-detect and setup cluster
+chmod +x setup-cluster.sh
+./setup-cluster.sh
+```
+
+This will:
+- ✅ Check for existing cluster
+- ✅ Auto-install minikube if needed
+- ✅ Start cluster with proper resources
+- ✅ Configure kubectl
+
+**Already have a cluster?** Skip to deployment options below.
+
+---
 
 ## 3 Deployment Options
 
 ### Option 1: Docker Compose (Local Dev - Fastest)
 
-**Best for:** Local development and testing
+**Best for:** Quick testing without Kubernetes
 
 ```bash
 # 1. Clone repo
@@ -36,25 +61,28 @@ curl http://localhost:8000/health
 
 ---
 
-### Option 2: Kubernetes (No Helm Required)
+### Option 2: Kubernetes (No Helm Required) ⭐ Recommended
 
-**Best for:** Production without Helm
+**Best for:** Production deployment
 
 ```bash
 # 1. Clone repo
 git clone https://github.com/Garrettc123/autonomous-butler-core.git
 cd autonomous-butler-core
 
-# 2. Configure secrets
-cp k8s/secrets.yaml.template k8s/secrets.yaml
-# Edit k8s/secrets.yaml with your API keys
+# 2. Setup cluster (if needed)
+./setup-cluster.sh
 
-# 3. Deploy (one command)
+# 3. Configure secrets
+cp k8s/secrets.yaml.template k8s/secrets.yaml
+nano k8s/secrets.yaml  # Add your API keys
+
+# 4. Deploy (one command)
 chmod +x deploy-no-helm.sh
 ./deploy-no-helm.sh
 
-# 4. Access
-kubectl port-forward -n autonomous-butler svc/butler-service 8000:8000
+# 5. Access
+kubectl port-forward -n autonomous-butler svc/butler-service 8000:8000 &
 curl http://localhost:8000/health
 ```
 
@@ -64,92 +92,68 @@ curl http://localhost:8000/health
 
 ### Option 3: Kubernetes with Helm (Optional)
 
-**Best for:** Production with Helm installed
+**Best for:** If you already have Helm
 
 ```bash
-# 1. Install Helm (if not already installed)
+# 1. Install Helm
 curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 
-# 2. Clone and configure
-git clone https://github.com/Garrettc123/autonomous-butler-core.git
-cd autonomous-butler-core
-cp k8s/secrets.yaml.template k8s/secrets.yaml
-# Edit secrets
-
-# 3. Deploy with Helm
-chmod +x deploy-all.sh
+# 2. Deploy
 ./deploy-all.sh
-```
-
-✅ **Full-featured production deployment**
-
----
-
-## Verification
-
-### Check System Status
-
-```bash
-# All pods running?
-kubectl get pods -n autonomous-butler
-
-# View logs
-kubectl logs -f -n autonomous-butler deployment/butler-core
-
-# Check health
-kubectl port-forward -n autonomous-butler svc/butler-service 8000:8000 &
-curl http://localhost:8000/health
-```
-
-### Test the API
-
-```bash
-# Get system status
-curl http://localhost:8000/api/butler/status
-
-# Execute a command
-curl -X POST http://localhost:8000/api/butler/command \
-  -H "Content-Type: application/json" \
-  -d '{"text": "Show me system status"}'
-
-# View metrics
-curl http://localhost:8000/api/butler/metrics
 ```
 
 ---
 
 ## Troubleshooting
 
+### Error: "connection refused"
+
+```bash
+# Run cluster setup
+./setup-cluster.sh
+```
+
+### Error: "kubectl not found"
+
+```bash
+# macOS
+brew install kubectl
+
+# Linux
+curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+sudo install kubectl /usr/local/bin/kubectl
+```
+
 ### Pods not starting?
 
 ```bash
-# Describe pod to see errors
+# Check what's wrong
+kubectl get pods -n autonomous-butler
 kubectl describe pod <pod-name> -n autonomous-butler
-
-# Check events
-kubectl get events -n autonomous-butler --sort-by='.lastTimestamp'
+kubectl logs <pod-name> -n autonomous-butler
 ```
 
-### Secrets not configured?
+**Full troubleshooting guide:** [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
+
+---
+
+## Verification
 
 ```bash
-# Check if secrets exist
-kubectl get secrets -n autonomous-butler
+# All pods running?
+kubectl get pods -n autonomous-butler
 
-# Recreate secrets
-kubectl delete secret butler-secrets -n autonomous-butler
-kubectl apply -f k8s/secrets.yaml
-```
+# Expected output:
+# NAME                           READY   STATUS    RESTARTS   AGE
+# kafka-0                        1/1     Running   0          2m
+# redis-xxx                      1/1     Running   0          2m
+# postgres-xxx                   1/1     Running   0          2m
+# butler-core-xxx                1/1     Running   0          1m
 
-### Image pull errors?
-
-```bash
-# Login to GitHub Container Registry
-echo $GITHUB_TOKEN | docker login ghcr.io -u USERNAME --password-stdin
-
-# Or use local image
-docker build -t ghcr.io/garrettc123/autonomous-butler-core:latest .
-kubectl set image deployment/butler-core butler-core=ghcr.io/garrettc123/autonomous-butler-core:latest -n autonomous-butler
+# Test API
+kubectl port-forward -n autonomous-butler svc/butler-service 8000:8000 &
+curl http://localhost:8000/health
+# Should return: {"status":"healthy"}
 ```
 
 ---
@@ -158,13 +162,14 @@ kubectl set image deployment/butler-core butler-core=ghcr.io/garrettc123/autonom
 
 1. ✅ [Configure monitoring](monitoring.md)
 2. ✅ [Set up GitHub webhooks](webhooks.md)
-3. ✅ [Configure Stripe integration](stripe.md)
-4. ✅ [Add custom agents](agents.md)
+3. ✅ [Add Stripe integration](stripe.md)
+4. ✅ [Create custom agents](agents.md)
 
 ---
 
 ## Support
 
 - 📖 [Full Documentation](../README.md)
+- 🔧 [Troubleshooting Guide](TROUBLESHOOTING.md)
 - 🐛 [Report Issues](https://github.com/Garrettc123/autonomous-butler-core/issues)
 - 💬 [Discussions](https://github.com/Garrettc123/autonomous-butler-core/discussions)
