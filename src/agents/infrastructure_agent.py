@@ -1,6 +1,6 @@
 """
 Infrastructure Agent – monitors uptime, scales services,
-and optimises cloud costs.
+and optimizes cloud costs.
 """
 
 import asyncio

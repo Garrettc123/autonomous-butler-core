@@ -73,7 +73,7 @@ class BaseAgent(ABC):
     # ------------------------------------------------------------------
 
     async def setup(self) -> None:
-        """Override to perform one-time initialisation."""
+        """Override to perform one-time initialization."""
 
     @abstractmethod
     async def run_cycle(self) -> None:

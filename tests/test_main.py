@@ -39,8 +39,8 @@ def test_get_specific_agent(client):
 
 def test_get_unknown_agent(client):
     resp = client.get("/agents/nonexistent")
-    # Returns a tuple from the route handler
-    assert resp.status_code in (200, 404)
+    assert resp.status_code == 404
+    assert "not found" in resp.json().get("error", "").lower()
 
 
 def test_events_endpoint(client):

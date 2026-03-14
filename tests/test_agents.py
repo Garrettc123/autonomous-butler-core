@@ -28,7 +28,7 @@ class ConcreteAgent(BaseAgent):
 
     async def run_cycle(self):
         self.record_action("test_action", {"key": "val"})
-        await asyncio.sleep(1000)  # sleep so the loop idles
+        await asyncio.sleep(60)  # idle; will be cancelled on stop()
 
 
 def test_agent_initial_state():
