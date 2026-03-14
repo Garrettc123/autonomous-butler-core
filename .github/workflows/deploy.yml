@@ -16,20 +16,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      
+
       - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
-          pip install pytest pytest-asyncio
-      
+        run: pip install -r requirements.txt
+
       - name: Run tests
-        run: |
-          pytest tests/ -v || echo "Tests pending"
+        run: pytest tests/ -v
 
   build-and-push:
     name: Build and Push Docker Image
@@ -41,14 +38,14 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      
+
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -57,7 +54,7 @@ jobs:
           tags: |
             type=sha,prefix={{branch}}-
             type=raw,value=latest
-      
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
@@ -66,25 +63,17 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
-  deploy-notification:
-    name: Deployment Success
+  deploy-to-railway:
+    name: Deploy to Railway
     runs-on: ubuntu-latest
     needs: [build-and-push]
+    if: github.ref == 'refs/heads/main'
     steps:
-      - name: Success message
+      - uses: actions/checkout@v4
+
+      - name: Deploy to Railway
         run: |
           echo "✅ Autonomous Butler Core deployed successfully!"
           echo "Image: ghcr.io/${{ github.repository }}:latest"
           echo "Commit: ${{ github.sha }}"
-
-  setup-cluster:
-    name: Setup Kubernetes Cluster
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Make setup script executable
-        run: chmod +x setup-cluster.sh
-      
-      - name: Run cluster setup
-        run: ./setup-cluster.sh
+          echo "railway.toml is present for Railway auto-deploy on git push."
