@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="refresh" content="30">
+<title>Autonomous Butler – Master Dashboard</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --card: #1c1f2e;
+    --border: #2d3146;
+    --green: #22c55e;
+    --red: #ef4444;
+    --yellow: #eab308;
+    --blue: #3b82f6;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; padding: 24px; }
+  h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: 4px; }
+  .subtitle { color: var(--muted); font-size: 0.85rem; margin-bottom: 24px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+  .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .card-title { font-weight: 600; font-size: 1rem; }
+  .badge { padding: 2px 10px; border-radius: 999px; font-size: 0.75rem; font-weight: 600; }
+  .badge-running { background: rgba(34,197,94,0.15); color: var(--green); }
+  .badge-stopped { background: rgba(148,163,184,0.15); color: var(--muted); }
+  .badge-error   { background: rgba(239,68,68,0.15);  color: var(--red); }
+  .badge-initializing { background: rgba(234,179,8,0.15); color: var(--yellow); }
+  .stat { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 0.85rem; }
+  .stat:last-child { border-bottom: none; }
+  .stat-label { color: var(--muted); }
+  .stat-value { font-weight: 600; }
+  .description { color: var(--muted); font-size: 0.8rem; margin-bottom: 12px; }
+  .error-text { color: var(--red); font-size: 0.75rem; margin-top: 8px; word-break: break-word; }
+  .summary { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin-bottom: 24px; }
+  .summary-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; text-align: center; }
+  .summary-value { font-size: 2rem; font-weight: 700; }
+  .summary-label { color: var(--muted); font-size: 0.8rem; margin-top: 4px; }
+  .summary-green { color: var(--green); }
+  .summary-blue  { color: var(--blue); }
+  .summary-yellow { color: var(--yellow); }
+  .section-title { font-size: 1rem; font-weight: 600; margin-bottom: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  footer { margin-top: 32px; text-align: center; color: var(--muted); font-size: 0.75rem; }
+</style>
+</head>
+<body>
+<h1>🤖 Autonomous Butler</h1>
+<p class="subtitle">Master Dashboard · Auto-refreshes every 30 s · {{ now }}</p>
+
+<!-- System summary -->
+<div class="summary">
+  <div class="summary-card">
+    <div class="summary-value summary-green">{{ agents_running }}</div>
+    <div class="summary-label">Agents Running</div>
+  </div>
+  <div class="summary-card">
+    <div class="summary-value summary-blue">{{ total_actions_today }}</div>
+    <div class="summary-label">Actions Today</div>
+  </div>
+  <div class="summary-card">
+    <div class="summary-value {% if system_healthy %}summary-green{% else %}summary-yellow{% endif %}">
+      {% if system_healthy %}Healthy{% else %}Degraded{% endif %}
+    </div>
+    <div class="summary-label">System Health</div>
+  </div>
+  <div class="summary-card">
+    <div class="summary-value summary-blue">{{ event_count }}</div>
+    <div class="summary-label">Bus Events</div>
+  </div>
+</div>
+
+<!-- Agent cards -->
+<p class="section-title">Agents</p>
+<div class="grid">
+{% for agent in agents %}
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">{{ agent.name | title }}</span>
+    <span class="badge badge-{{ agent.status }}">{{ agent.status }}</span>
+  </div>
+  <p class="description">{{ agent.description }}</p>
+  <div class="stat">
+    <span class="stat-label">Actions today</span>
+    <span class="stat-value">{{ agent.actions_today }}</span>
+  </div>
+  <div class="stat">
+    <span class="stat-label">Started at</span>
+    <span class="stat-value">{{ agent.started_at or '—' }}</span>
+  </div>
+  {% for k, v in agent.items() %}
+  {% if k not in ['name', 'description', 'status', 'actions_today', 'last_error', 'started_at'] %}
+  <div class="stat">
+    <span class="stat-label">{{ k | replace('_', ' ') | title }}</span>
+    <span class="stat-value">{{ v }}</span>
+  </div>
+  {% endif %}
+  {% endfor %}
+  {% if agent.last_error %}
+  <p class="error-text">⚠ {{ agent.last_error }}</p>
+  {% endif %}
+</div>
+{% endfor %}
+</div>
+
+<!-- Recent bus events -->
+{% if recent_events %}
+<p class="section-title" style="margin-top:32px">Recent Events</p>
+<div class="card">
+{% for evt in recent_events %}
+<div class="stat">
+  <span class="stat-label">{{ evt.timestamp }} · <strong>{{ evt.topic }}</strong> from {{ evt.source }}</span>
+  <span class="stat-value">{{ evt.payload | string | truncate(60) }}</span>
+</div>
+{% endfor %}
+</div>
+{% endif %}
+
+<footer>Autonomous Butler Core · {{ version }}</footer>
+</body>
+</html>
