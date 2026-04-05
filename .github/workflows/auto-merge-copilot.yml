@@ -4,6 +4,8 @@ on:
     types: [opened, synchronize, ready_for_review]
   check_suite:
     types: [completed]
+  push:
+    branches: [main]
   workflow_dispatch:
 jobs:
   auto-merge:
