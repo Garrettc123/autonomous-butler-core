@@ -1,104 +1,116 @@
 """
-Revenue Ops Agent – tracks MRR/ARR via Stripe, alerts on churn,
-and triggers upsell campaigns.
+Revenue Ops Agent – orchestrates every revenue stream.
+
+The agent itself holds no Stripe logic. It builds the configured set of
+:class:`~src.revenue.RevenueStream` instances from the shared registry, runs
+them on each cycle, records their actions, and republishes their events onto
+the bus. Adding a new monetizable channel means registering a new stream, not
+editing this file.
 """
 
-import logging
 import os
-from datetime import datetime, timedelta, timezone
 from typing import Any
 
-import httpx
-
 from src.agents import BaseAgent
+from src.revenue import RevenueStream, StreamResult, registry
+from src.revenue.stripe_client import StripeClient
 
-logger = logging.getLogger(__name__)
+# Importing the streams package registers all built-in streams.
+import src.revenue.streams  # noqa: F401
 
-# Stripe uses Unix timestamps; MRR thresholds in USD cents
-CHURN_ALERT_THRESHOLD = 3  # number of cancellations per cycle before alerting
+DEFAULT_CYCLE_SECONDS = 300.0
+
+
+def _parse_enabled_streams(raw: str) -> set[str] | None:
+    """
+    Parse the ``REVENUE_STREAMS`` setting into a set of stream ids.
+
+    Empty or ``"all"`` enables every registered stream.
+    """
+    value = (raw or "").strip()
+    if not value or value.lower() == "all":
+        return None
+    return {part.strip() for part in value.split(",") if part.strip()}
 
 
 class RevenueAgent(BaseAgent):
-    """Tracks Stripe MRR/ARR, detects churn, and flags upsell opportunities."""
+    """Runs every enabled revenue stream and reports their combined state."""
 
     name = "revenue"
-    description = "Track MRR/ARR, alert on churn, trigger upsell campaigns"
+    description = "Orchestrate subscription, usage, one-time, dunning and upsell revenue"
 
-    def __init__(self, event_bus=None, stripe_secret_key: str = "") -> None:
+    def __init__(
+        self,
+        event_bus=None,
+        stripe_secret_key: str = "",
+        enabled_streams: set[str] | None = None,
+        streams: list[RevenueStream] | None = None,
+    ) -> None:
         super().__init__(event_bus)
         self._stripe_key = stripe_secret_key or os.getenv("STRIPE_SECRET_KEY", "")
-        self._stripe_url = "https://api.stripe.com/v1"
-        self._last_mrr_cents: int = 0
+        self._client = StripeClient(self._stripe_key)
+
+        if streams is not None:
+            self.streams = streams
+        else:
+            if enabled_streams is None:
+                enabled_streams = _parse_enabled_streams(os.getenv("REVENUE_STREAMS", ""))
+            self.streams = registry.build(enabled_streams, client=self._client)
 
     def cycle_interval(self) -> float:
-        return 300.0  # every 5 minutes
+        return DEFAULT_CYCLE_SECONDS
+
+    # ------------------------------------------------------------------
+    # Stream access
+    # ------------------------------------------------------------------
+
+    def get_stream(self, stream_id: str) -> RevenueStream | None:
+        """Return a stream by id, or ``None`` if it is not registered."""
+        for stream in self.streams:
+            if stream.id == stream_id:
+                return stream
+        return None
+
+    def stream_statuses(self) -> list[dict[str, Any]]:
+        """Status of every stream, for the API and dashboard."""
+        return [stream.status() for stream in self.streams]
+
+    # ------------------------------------------------------------------
+    # Cycle
+    # ------------------------------------------------------------------
 
     async def run_cycle(self) -> None:
-        if not self._stripe_key:
-            self.logger.debug("No Stripe key – skipping revenue cycle")
+        for stream in self.streams:
+            result = await stream.run()
+            await self._handle_result(stream, result)
+
+    async def _handle_result(self, stream: RevenueStream, result: StreamResult) -> None:
+        if result.skipped:
+            self.logger.debug("Stream %s skipped: %s", stream.id, result.reason)
             return
 
-        mrr = await self._calculate_mrr()
-        if mrr is not None:
-            self.record_action("MRR snapshot", {"mrr_usd": mrr / 100})
-            await self.emit("revenue.mrr_snapshot", {"mrr_usd": mrr / 100})
-            self._last_mrr_cents = mrr
+        for action in result.actions:
+            self.record_action(action, {"stream": stream.id})
 
-        await self._check_churn()
+        for topic, payload in result.events:
+            await self.emit(topic, {**payload, "stream": stream.id})
 
-    async def _stripe_get(self, path: str, params: dict | None = None) -> dict | None:
-        url = f"{self._stripe_url}/{path}"
-        headers = {"Authorization": f"Bearer {self._stripe_key}"}
-        try:
-            async with httpx.AsyncClient(timeout=15) as client:
-                resp = await client.get(url, headers=headers, params=params or {})
-                resp.raise_for_status()
-                return resp.json()
-        except httpx.HTTPError as exc:
-            self.logger.warning("Stripe API error: %s", exc)
-            return None
-
-    async def _calculate_mrr(self) -> int | None:
-        """Sum active subscription monthly amounts (in cents)."""
-        data = await self._stripe_get("subscriptions", {"status": "active", "limit": 100})
-        if data is None:
-            return None
-        mrr = 0
-        for sub in data.get("data", []):
-            for item in sub.get("items", {}).get("data", []):
-                plan = item.get("plan", {})
-                amount = plan.get("amount", 0)
-                interval = plan.get("interval", "month")
-                qty = item.get("quantity", 1)
-                if interval == "year":
-                    amount = amount // 12
-                mrr += amount * qty
-        return mrr
-
-    async def _check_churn(self) -> None:
-        """Look for subscriptions cancelled in the last cycle window."""
-        since = int((datetime.now(timezone.utc) - timedelta(seconds=self.cycle_interval())).timestamp())
-        data = await self._stripe_get(
-            "subscriptions",
-            {"status": "canceled", "created[gte]": since, "limit": 100},
-        )
-        if data is None:
-            return
-        cancelled = data.get("data", [])
-        if len(cancelled) >= CHURN_ALERT_THRESHOLD:
-            self.record_action(
-                f"Churn alert: {len(cancelled)} cancellations detected",
-                {"count": len(cancelled)},
-            )
-            await self.emit("revenue.churn_alert", {"cancellations": len(cancelled)})
-        elif cancelled:
-            self.record_action(
-                f"{len(cancelled)} cancellation(s) recorded",
-                {"count": len(cancelled)},
-            )
+    # ------------------------------------------------------------------
+    # Health
+    # ------------------------------------------------------------------
 
     def health(self) -> dict[str, Any]:
         h = super().health()
         h["stripe_configured"] = bool(self._stripe_key)
-        h["last_mrr_usd"] = self._last_mrr_cents / 100
+        h["streams_enabled"] = sum(1 for s in self.streams if s.enabled)
+        h["streams_total"] = len(self.streams)
+        h["last_mrr_usd"] = self._last_mrr_usd()
+        h["streams"] = self.stream_statuses()
         return h
+
+    def _last_mrr_usd(self) -> float:
+        """Most recent MRR reading, kept for dashboard/API backwards compatibility."""
+        subscriptions = self.get_stream("subscriptions")
+        if subscriptions is None:
+            return 0.0
+        return float(subscriptions.status()["last_metrics"].get("mrr_usd", 0.0))
