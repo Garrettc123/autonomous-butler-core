@@ -25,6 +25,14 @@ def _parse_keywords(raw: str) -> tuple[str, ...]:
     return tuple(part.strip() for part in (raw or "").split(",") if part.strip())
 
 
+def _parse_qualify_score(raw: str) -> int:
+    """Parse the qualification threshold, falling back on unset/invalid input."""
+    try:
+        return int((raw or "").strip())
+    except ValueError:
+        return DEFAULT_QUALIFY_SCORE
+
+
 def _default_pipeline(icp_keywords: tuple[str, ...], qualify_score: int) -> LeadPipeline:
     """Build the stock source/enricher set from environment configuration."""
     return LeadPipeline(
@@ -74,10 +82,7 @@ class AcquisitionStream(RevenueStream):
             else _parse_keywords(os.getenv("ICP_KEYWORDS", ""))
         )
         if qualify_score is None:
-            qualify_score = int(
-                os.getenv("LEAD_QUALIFY_SCORE", str(DEFAULT_QUALIFY_SCORE)) or
-                DEFAULT_QUALIFY_SCORE
-            )
+            qualify_score = _parse_qualify_score(os.getenv("LEAD_QUALIFY_SCORE", ""))
         self.icp_keywords = keywords
         self.pipeline = pipeline or _default_pipeline(keywords, qualify_score)
         self.discovery_limit = discovery_limit

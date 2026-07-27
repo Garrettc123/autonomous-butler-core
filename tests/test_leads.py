@@ -14,7 +14,11 @@ from src.leads import (
 )
 from src.leads.enrichment import ClearbitEnricher, GitHubProfileEnricher, HunterEnricher
 from src.leads.sources import GitHubLeadSource
-from src.revenue.streams.acquisition import AcquisitionStream, _parse_keywords
+from src.revenue.streams.acquisition import (
+    AcquisitionStream,
+    _parse_keywords,
+    _parse_qualify_score,
+)
 from src.revenue.stripe_client import StripeClient
 
 
@@ -134,6 +138,11 @@ def test_email_validation():
 def test_parse_keywords():
     assert _parse_keywords("devops, sre ,") == ("devops", "sre")
     assert _parse_keywords("") == ()
+
+
+@pytest.mark.parametrize("raw,expected", [("70", 70), ("", 55), ("nonsense", 55)])
+def test_parse_qualify_score(raw, expected):
+    assert _parse_qualify_score(raw) == expected
 
 
 # ---------------------------------------------------------------------------
