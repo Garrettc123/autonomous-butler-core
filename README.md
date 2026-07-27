@@ -81,6 +81,7 @@ to a no-op when its credentials are missing.
 
 | Stream id | What it does | Events emitted |
 |-----------|--------------|----------------|
+| `acquisition` | Finds and enriches new leads, then invoices qualified prospects | `revenue.lead_qualified`, `revenue.prospect_invoiced` |
 | `subscriptions` | Normalizes active Stripe subscriptions into MRR/ARR | `revenue.mrr_snapshot` |
 | `usage_based` | Flushes buffered metered usage to Stripe usage records | `revenue.usage_reported` |
 | `one_time` | Aggregates non-subscription charges, net of refunds | `revenue.one_time_snapshot` |
@@ -109,6 +110,38 @@ timestamp does not check out.
 **Adding a new stream:** subclass `RevenueStream`, implement `collect()`, and
 register it in `src/revenue/streams/__init__.py` — no changes to the agent are
 required.
+
+### 🎯 Customer Acquisition (lead gen → enrichment → payment)
+
+The `acquisition` stream is the top of the funnel. Every cycle it runs a three
+stage pipeline defined in `src/leads/`:
+
+1. **Discover** — a `LeadSource` finds accounts matching your ideal customer
+   profile. The built-in `GitHubLeadSource` searches repositories by
+   `ICP_KEYWORDS` and turns each owner into a lead.
+2. **Enrich** — each `LeadEnricher` fills in missing fields without overwriting
+   known ones: `github_profile` (public name, company, blog, email),
+   `clearbit` (legal name, headcount, industry) and `hunter` (a deliverable
+   business email for the company domain).
+3. **Qualify & bill** — leads are scored 0-100 on contactability and ICP fit.
+   Anything at or above `LEAD_QUALIFY_SCORE` gets a Stripe customer and a real
+   `send_invoice` invoice for `STRIPE_ACQUISITION_PRICE_ID`, payable on net-14
+   terms. Prospects that already exist in Stripe are never re-billed, and at
+   most five invoices are sent per cycle.
+
+```bash
+ICP_KEYWORDS=devops,platform-engineering,sre   # required, else the stream no-ops
+GITHUB_TOKEN=ghp_...                           # required for lead discovery
+STRIPE_ACQUISITION_PRICE_ID=price_...          # required to invoice prospects
+LEAD_QUALIFY_SCORE=55                          # optional, defaults to 55
+CLEARBIT_API_KEY=...                           # optional enrichment
+HUNTER_API_KEY=...                             # optional enrichment
+```
+
+Each provider is independent: with no enrichment keys the pipeline still runs on
+GitHub data alone, and without an acquisition price it builds and reports the
+qualified pipeline without charging anyone. Inspect it with
+`curl http://localhost:8000/revenue/streams/acquisition`.
 
 ## 📖 Documentation
 

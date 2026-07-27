@@ -7,6 +7,7 @@ configuration without importing each module by hand.
 """
 
 from src.revenue import registry
+from src.revenue.streams.acquisition import AcquisitionStream
 from src.revenue.streams.dunning import DunningStream
 from src.revenue.streams.expansion import ExpansionStream
 from src.revenue.streams.one_time import OneTimeStream
@@ -14,6 +15,7 @@ from src.revenue.streams.subscriptions import SubscriptionStream
 from src.revenue.streams.usage_based import UsageBasedStream
 
 ALL_STREAMS = (
+    AcquisitionStream,
     SubscriptionStream,
     UsageBasedStream,
     OneTimeStream,
@@ -26,6 +28,7 @@ for _stream_cls in ALL_STREAMS:
 
 __all__ = [
     "ALL_STREAMS",
+    "AcquisitionStream",
     "DunningStream",
     "ExpansionStream",
     "OneTimeStream",

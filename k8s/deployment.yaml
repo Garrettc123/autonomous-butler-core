@@ -63,6 +63,30 @@ spec:
               name: butler-secrets
               key: stripe-usage-price-id
               optional: true
+        - name: STRIPE_ACQUISITION_PRICE_ID
+          valueFrom:
+            secretKeyRef:
+              name: butler-secrets
+              key: stripe-acquisition-price-id
+              optional: true
+        - name: CLEARBIT_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: butler-secrets
+              key: clearbit-api-key
+              optional: true
+        - name: HUNTER_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: butler-secrets
+              key: hunter-api-key
+              optional: true
+        - name: ICP_KEYWORDS
+          valueFrom:
+            secretKeyRef:
+              name: butler-secrets
+              key: icp-keywords
+              optional: true
         - name: REVENUE_STREAMS
           value: "all"
         resources:

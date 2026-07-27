@@ -135,7 +135,14 @@ def test_stream_result_to_dict():
 def test_registry_builds_all_streams():
     streams = registry.build(None, client=StripeClient(""))
     ids = {s.id for s in streams}
-    assert ids == {"subscriptions", "usage_based", "one_time", "dunning", "expansion"}
+    assert ids == {
+        "acquisition",
+        "subscriptions",
+        "usage_based",
+        "one_time",
+        "dunning",
+        "expansion",
+    }
     assert all(s.enabled for s in streams)
 
 
@@ -144,7 +151,7 @@ def test_registry_respects_enabled_subset():
     enabled = {s.id for s in streams if s.enabled}
     assert enabled == {"dunning"}
     # Disabled streams are still built so they remain visible in the dashboard.
-    assert len(streams) == 5
+    assert len(streams) == 6
 
 
 def test_registry_survives_failing_factory():
@@ -516,7 +523,7 @@ def test_parse_enabled_streams():
 
 def test_revenue_agent_builds_all_streams():
     agent = RevenueAgent(stripe_secret_key="")
-    assert len(agent.streams) == 5
+    assert len(agent.streams) == 6
     assert agent.get_stream("dunning") is not None
     assert agent.get_stream("nope") is None
 
@@ -526,8 +533,8 @@ def test_revenue_agent_health_exposes_streams():
     h = agent.health()
     assert h["stripe_configured"] is False
     assert h["last_mrr_usd"] == 0.0
-    assert h["streams_total"] == 5
-    assert len(h["streams"]) == 5
+    assert h["streams_total"] == 6
+    assert len(h["streams"]) == 6
 
 
 def test_revenue_agent_enabled_subset():

@@ -6,13 +6,19 @@ All notable changes to the Autonomous Butler Core project will be documented in 
 
 ### Added
 - 💰 Pluggable `RevenueStream` abstraction with a per-environment stream registry
-- 💳 Five revenue streams: `subscriptions`, `usage_based`, `one_time`, `dunning`, `expansion`
+- 💳 Six revenue streams: `acquisition`, `subscriptions`, `usage_based`, `one_time`, `dunning`, `expansion`
+- 🎯 Customer acquisition pipeline (`src/leads/`): GitHub ICP lead discovery,
+  GitHub profile / Clearbit / Hunter enrichment, and 0-100 lead scoring
+- 🧾 Qualified prospects are automatically converted into a Stripe customer and
+  a net-14 `send_invoice` invoice, with duplicate-billing and per-cycle caps
 - 🔁 Failed-payment recovery with exponential backoff (1h → 6h → 24h → 72h)
 - 📈 Seat-growth upsell detection alongside existing churn alerts
 - 🔌 `GET /revenue/streams` and `GET /revenue/streams/{id}` endpoints
 - 🪝 `POST /webhooks/stripe` with HMAC signature and replay-window verification
 - 📊 Per-stream counters in `/metrics` and a Revenue Streams dashboard section
 - ⚙️ `REVENUE_STREAMS`, `STRIPE_WEBHOOK_SECRET` and `STRIPE_USAGE_PRICE_ID` configuration
+- ⚙️ `ICP_KEYWORDS`, `LEAD_QUALIFY_SCORE`, `STRIPE_ACQUISITION_PRICE_ID`,
+  `CLEARBIT_API_KEY` and `HUNTER_API_KEY` configuration
 
 ### Changed
 - ♻️ `RevenueAgent` is now a stream orchestrator and holds no Stripe logic

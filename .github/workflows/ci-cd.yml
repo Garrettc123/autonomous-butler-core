@@ -100,6 +100,10 @@ jobs:
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
           STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
           STRIPE_USAGE_PRICE_ID: ${{ secrets.STRIPE_USAGE_PRICE_ID }}
+          STRIPE_ACQUISITION_PRICE_ID: ${{ secrets.STRIPE_ACQUISITION_PRICE_ID }}
+          CLEARBIT_API_KEY: ${{ secrets.CLEARBIT_API_KEY }}
+          HUNTER_API_KEY: ${{ secrets.HUNTER_API_KEY }}
+          ICP_KEYWORDS: ${{ vars.ICP_KEYWORDS }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
@@ -117,6 +121,10 @@ jobs:
             --from-literal=stripe-secret-key="$STRIPE_SECRET_KEY" \
             --from-literal=stripe-webhook-secret="$STRIPE_WEBHOOK_SECRET" \
             --from-literal=stripe-usage-price-id="$STRIPE_USAGE_PRICE_ID" \
+            --from-literal=stripe-acquisition-price-id="$STRIPE_ACQUISITION_PRICE_ID" \
+            --from-literal=clearbit-api-key="$CLEARBIT_API_KEY" \
+            --from-literal=hunter-api-key="$HUNTER_API_KEY" \
+            --from-literal=icp-keywords="$ICP_KEYWORDS" \
             --from-literal=slack-webhook-url="$SLACK_WEBHOOK_URL" \
             --dry-run=client -o yaml | kubectl apply -f -
 

@@ -84,9 +84,16 @@ def test_revenue_streams_endpoint(client):
     assert resp.status_code == 200
     data = resp.json()
     ids = {s["id"] for s in data["streams"]}
-    assert ids == {"subscriptions", "usage_based", "one_time", "dunning", "expansion"}
-    assert data["total"] == 5
-    assert data["enabled"] == 5
+    assert ids == {
+        "acquisition",
+        "subscriptions",
+        "usage_based",
+        "one_time",
+        "dunning",
+        "expansion",
+    }
+    assert data["total"] == 6
+    assert data["enabled"] == 6
 
 
 def test_single_revenue_stream_endpoint(client):
@@ -109,8 +116,8 @@ def test_metrics_includes_revenue_streams(client):
     resp = client.get("/metrics")
     assert resp.status_code == 200
     data = resp.json()
-    assert data["revenue_streams_total"] == 5
-    assert data["revenue_streams_enabled"] == 5
+    assert data["revenue_streams_total"] == 6
+    assert data["revenue_streams_enabled"] == 6
     assert "dunning" in data["revenue_streams"]
     assert data["revenue_streams"]["dunning"]["collect_count"] == 0
 
@@ -119,8 +126,8 @@ def test_revenue_agent_health_reports_streams(client):
     resp = client.get("/agents/revenue")
     assert resp.status_code == 200
     data = resp.json()
-    assert data["streams_total"] == 5
-    assert len(data["streams"]) == 5
+    assert data["streams_total"] == 6
+    assert len(data["streams"]) == 6
 
 
 def test_stripe_webhook_without_secret_configured(client, monkeypatch):
