@@ -59,7 +59,12 @@ class SubscriptionStream(RevenueStream):
 
     @staticmethod
     def _subscription_mrr_cents(subscription: dict[str, Any]) -> int:
-        """Normalize one subscription's line items to a monthly cent amount."""
+        """
+        Normalize one subscription's line items to a monthly cent amount.
+
+        Non-monthly intervals are converted using the average length of a month
+        (52/12 weeks, 365/12 days) so mixed billing cadences roll up accurately.
+        """
         total = 0
         for item in subscription.get("items", {}).get("data", []):
             plan = item.get("plan") or item.get("price") or {}
@@ -69,8 +74,8 @@ class SubscriptionStream(RevenueStream):
             if interval == "year":
                 amount = amount // 12
             elif interval == "week":
-                amount = amount * 4
+                amount = round(amount * 52 / 12)
             elif interval == "day":
-                amount = amount * 30
+                amount = round(amount * 365 / 12)
             total += amount * quantity
         return total

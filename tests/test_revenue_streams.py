@@ -13,7 +13,11 @@ from src.revenue.streams.expansion import ExpansionStream
 from src.revenue.streams.one_time import OneTimeStream
 from src.revenue.streams.subscriptions import SubscriptionStream
 from src.revenue.streams.usage_based import UsageBasedStream
-from src.revenue.stripe_client import StripeClient, verify_webhook_signature
+from src.revenue.stripe_client import (
+    WEBHOOK_TOLERANCE_SECONDS,
+    StripeClient,
+    verify_webhook_signature,
+)
 from src.bus import EventBus
 
 
@@ -179,6 +183,24 @@ async def test_subscription_stream_normalizes_yearly_plans():
     stream = SubscriptionStream(client=client)
     result = await stream.run()
     assert result.metrics["mrr_usd"] == 10.0
+
+
+@pytest.mark.asyncio
+async def test_subscription_stream_normalizes_weekly_and_daily_plans():
+    """Weekly/daily plans use average month length, not a 4-week/30-day month."""
+    client = stub_client(
+        {
+            "subscriptions": {
+                "data": [
+                    subscription("sub_w", 1200, "week"),  # 1200 * 52/12 = 5200 cents
+                    subscription("sub_d", 120, "day"),  # 120 * 365/12 = 3650 cents
+                ]
+            }
+        }
+    )
+    stream = SubscriptionStream(client=client)
+    result = await stream.run()
+    assert result.metrics["mrr_usd"] == 88.5
 
 
 @pytest.mark.asyncio
@@ -595,7 +617,8 @@ def test_webhook_signature_rejects_tampered_payload():
 
 def test_webhook_signature_rejects_replayed_timestamp():
     payload = b'{"id":"evt_1"}'
-    old = int(time.time()) - 10_000
+    # Sign with a timestamp comfortably outside Stripe's replay tolerance.
+    old = int(time.time()) - (WEBHOOK_TOLERANCE_SECONDS * 2)
     assert verify_webhook_signature(payload, sign(payload, "whsec_x", old), "whsec_x") is False
 
 
