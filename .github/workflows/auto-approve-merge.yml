@@ -33,8 +33,6 @@ jobs:
           PR_NUMBER="$(jq -r '
             if .pull_request then
               .pull_request.number
-            elif (.review.pull_request.number? // empty) then
-              .review.pull_request.number
             elif (.check_suite.pull_requests? // [] | length) > 0 then
               .check_suite.pull_requests[0].number
             else
