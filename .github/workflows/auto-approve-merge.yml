@@ -5,8 +5,7 @@ on:
     types: [opened, reopened, synchronize, ready_for_review]
   pull_request_review:
     types: [submitted]
-  workflow_run:
-    workflows: ["Autonomous Butler Core - CI/CD", "Zero-Touch Deployment Pipeline"]
+  check_suite:
     types: [completed]
 
 permissions:
@@ -21,9 +20,9 @@ jobs:
       (github.event_name == 'pull_request_review' &&
        github.event.review.state == 'approved' &&
        !github.event.pull_request.draft) ||
-      (github.event_name == 'workflow_run' &&
-       github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.pull_requests[0])
+      (github.event_name == 'check_suite' &&
+       github.event.check_suite.conclusion == 'success' &&
+       github.event.check_suite.pull_requests[0])
     steps:
       - name: Enable auto-merge
         env:
@@ -40,9 +39,11 @@ jobs:
 
           if "pull_request" in event:
               print(event["pull_request"]["number"])
-          else:
-              pull_requests = event.get("workflow_run", {}).get("pull_requests", [])
+          elif "check_suite" in event:
+              pull_requests = event.get("check_suite", {}).get("pull_requests", [])
               print(pull_requests[0]["number"] if pull_requests else "")
+          else:
+              print("")
           PY
           )"
 
@@ -60,14 +61,30 @@ jobs:
             exit 0
           fi
 
-          if [ "$REVIEW_DECISION" = "REVIEW_REQUIRED" ] || [ "$REVIEW_DECISION" = "CHANGES_REQUESTED" ]; then
-            echo "PR #$PR_NUMBER is not approved yet (decision: $REVIEW_DECISION); skipping for now."
-            exit 0
-          fi
+          case "$REVIEW_DECISION" in
+            ""|APPROVED)
+              ;;
+            REVIEW_REQUIRED|CHANGES_REQUESTED)
+              echo "PR #$PR_NUMBER is not approved yet (decision: $REVIEW_DECISION); skipping for now."
+              exit 0
+              ;;
+            *)
+              echo "PR #$PR_NUMBER has unexpected review decision '$REVIEW_DECISION'; skipping for now."
+              exit 0
+              ;;
+          esac
 
-          if [ "$MERGE_STATE" != "CLEAN" ]; then
-            echo "PR #$PR_NUMBER is not mergeable yet (state: $MERGE_STATE); skipping for now."
-            exit 0
-          fi
+          case "$MERGE_STATE" in
+            CLEAN)
+              ;;
+            BEHIND|BLOCKED|DIRTY|DRAFT|HAS_HOOKS|UNKNOWN|UNSTABLE)
+              echo "PR #$PR_NUMBER is not mergeable yet (state: $MERGE_STATE); skipping for now."
+              exit 0
+              ;;
+            *)
+              echo "PR #$PR_NUMBER has unexpected merge state '$MERGE_STATE'; skipping for now."
+              exit 0
+              ;;
+          esac
 
           gh pr merge "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --squash --auto --delete-branch
