@@ -2,10 +2,9 @@ name: Auto Approve & Merge
 
 on:
   pull_request:
-    types: [opened, reopened, synchronize]
-  workflow_run:
-    workflows: ["*"]
-    types: [completed]
+    types: [opened, reopened, synchronize, ready_for_review]
+  pull_request_review:
+    types: [submitted]
 
 permissions:
   contents: write
@@ -14,20 +13,36 @@ permissions:
 jobs:
   auto-approve-merge:
     runs-on: ubuntu-latest
-    if: github.event.pull_request || github.event.workflow_run.conclusion == 'success'
+    if: |
+      (github.event_name == 'pull_request' && !github.event.pull_request.draft) ||
+      (github.event_name == 'pull_request_review' &&
+       github.event.review.state == 'approved' &&
+       !github.event.pull_request.draft)
     steps:
-      - name: Approve PR
-        uses: hmarr/auto-approve-action@v3
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Auto Merge PR
-        uses: pascalgn/automerge-action@v0.15.6
+      - name: Enable auto-merge
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          MERGE_LABELS: ""
-          MERGE_METHOD: squash
-          MERGE_DELETE_BRANCH: true
-          UPDATE_METHOD: rebase
-          MERGE_COMMIT_MESSAGE: "auto"
-          MERGE_RETRY_SLEEP: 5000
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+
+          REVIEW_DECISION="$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json reviewDecision --jq '.reviewDecision // ""')"
+          MERGE_STATE="$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json mergeStateStatus --jq '.mergeStateStatus // ""')"
+          AUTO_MERGE_ENABLED="$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json autoMergeRequest --jq '.autoMergeRequest != null')"
+
+          if [ "$AUTO_MERGE_ENABLED" = "true" ]; then
+            echo "Auto-merge is already enabled for PR #$PR_NUMBER."
+            exit 0
+          fi
+
+          if [ "$REVIEW_DECISION" = "REVIEW_REQUIRED" ]; then
+            echo "PR #$PR_NUMBER still requires review approval; skipping for now."
+            exit 0
+          fi
+
+          if [ "$MERGE_STATE" = "DIRTY" ] || [ "$MERGE_STATE" = "UNKNOWN" ]; then
+            echo "PR #$PR_NUMBER is not mergeable yet (state: $MERGE_STATE); skipping for now."
+            exit 0
+          fi
+
+          gh pr merge "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --squash --auto --delete-branch
