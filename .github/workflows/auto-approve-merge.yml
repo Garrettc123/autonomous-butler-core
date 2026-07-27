@@ -40,7 +40,7 @@ jobs:
           if "pull_request" in event:
               print(event["pull_request"]["number"])
           elif "check_suite" in event:
-              pull_requests = event.get("check_suite", {}).get("pull_requests", [])
+              pull_requests = event["check_suite"].get("pull_requests", [])
               print(pull_requests[0]["number"] if pull_requests else "")
           else:
               print("")
@@ -52,9 +52,16 @@ jobs:
             exit 0
           fi
 
-          REVIEW_DECISION="$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json reviewDecision --jq '.reviewDecision // ""')"
-          MERGE_STATE="$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json mergeStateStatus --jq '.mergeStateStatus // ""')"
-          AUTO_MERGE_ENABLED="$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json autoMergeRequest --jq '.autoMergeRequest != null')"
+          mapfile -t PR_STATE < <(
+            gh pr view "$PR_NUMBER" \
+              --repo "$GITHUB_REPOSITORY" \
+              --json reviewDecision,mergeStateStatus,autoMergeRequest \
+              --jq '[.reviewDecision // "", .mergeStateStatus // "", (.autoMergeRequest != null)] | .[]'
+          )
+
+          REVIEW_DECISION="${PR_STATE[0]}"
+          MERGE_STATE="${PR_STATE[1]}"
+          AUTO_MERGE_ENABLED="${PR_STATE[2]}"
 
           if [ "$AUTO_MERGE_ENABLED" = "true" ]; then
             echo "Auto-merge is already enabled for PR #$PR_NUMBER."
@@ -62,7 +69,11 @@ jobs:
           fi
 
           case "$REVIEW_DECISION" in
-            ""|APPROVED)
+            APPROVED)
+              ;;
+            "")
+              echo "PR #$PR_NUMBER has no approval decision yet; skipping for now."
+              exit 0
               ;;
             REVIEW_REQUIRED|CHANGES_REQUESTED)
               echo "PR #$PR_NUMBER is not approved yet (decision: $REVIEW_DECISION); skipping for now."
