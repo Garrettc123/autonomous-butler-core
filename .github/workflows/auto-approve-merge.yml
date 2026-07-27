@@ -22,30 +22,14 @@ jobs:
        !github.event.pull_request.draft) ||
       (github.event_name == 'check_suite' &&
        github.event.check_suite.conclusion == 'success' &&
-       github.event.check_suite.pull_requests[0])
+       toJson(github.event.check_suite.pull_requests) != '[]')
     steps:
       - name: Enable auto-merge
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.check_suite.pull_requests[0].number }}
         run: |
           set -euo pipefail
-
-          PR_NUMBER="$(python - <<'PY'
-          import json
-          import os
-
-          with open(os.environ["GITHUB_EVENT_PATH"], "r", encoding="utf-8") as fh:
-              event = json.load(fh)
-
-          if "pull_request" in event:
-              print(event["pull_request"]["number"])
-          elif "check_suite" in event:
-              pull_requests = event["check_suite"].get("pull_requests", [])
-              print(pull_requests[0]["number"] if pull_requests else "")
-          else:
-              print("")
-          PY
-          )"
 
           if [ -z "$PR_NUMBER" ]; then
             echo "No pull request associated with this event; skipping."
@@ -88,7 +72,7 @@ jobs:
           case "$MERGE_STATE" in
             CLEAN)
               ;;
-            BEHIND|BLOCKED|DIRTY|DRAFT|HAS_HOOKS|UNKNOWN|UNSTABLE)
+            BEHIND|BLOCKED|DIRTY|HAS_HOOKS|UNKNOWN|UNSTABLE)
               echo "PR #$PR_NUMBER is not mergeable yet (state: $MERGE_STATE); skipping for now."
               exit 0
               ;;
