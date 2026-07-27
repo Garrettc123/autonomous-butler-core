@@ -5,6 +5,10 @@ from typing import Any
 from src.revenue import RevenueStream, StreamResult
 from src.revenue.stripe_client import StripeClient
 
+# Average month length, used to normalize non-monthly billing intervals.
+WEEKS_PER_MONTH = 52 / 12
+DAYS_PER_MONTH = 365 / 12
+
 
 class SubscriptionStream(RevenueStream):
     """
@@ -74,8 +78,8 @@ class SubscriptionStream(RevenueStream):
             if interval == "year":
                 amount = amount // 12
             elif interval == "week":
-                amount = round(amount * 52 / 12)
+                amount = round(amount * WEEKS_PER_MONTH)
             elif interval == "day":
-                amount = round(amount * 365 / 12)
+                amount = round(amount * DAYS_PER_MONTH)
             total += amount * quantity
         return total

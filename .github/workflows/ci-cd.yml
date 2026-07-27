@@ -49,6 +49,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Resolve image tag
         id: meta
+        shell: bash
         run: |
           # GHCR rejects uppercase image paths, so lowercase the repository name.
           echo "image=${IMAGE_NAME,,}" >> "$GITHUB_OUTPUT"
