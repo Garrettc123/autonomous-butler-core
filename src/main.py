@@ -5,6 +5,7 @@ Starts all 6 agents, wires them to the shared event bus,
 and serves the master dashboard + REST health API.
 """
 
+import json
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -12,7 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Header, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 
@@ -23,7 +24,8 @@ from src.agents.pm_agent import PMAgent
 from src.agents.revenue_agent import RevenueAgent
 from src.agents.security_agent import SecurityAgent
 from src.agents.support_agent import SupportAgent
-from src.bus import bus
+from src.bus import Event, bus
+from src.revenue.stripe_client import verify_webhook_signature
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
@@ -86,6 +88,8 @@ app = FastAPI(
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
 async def dashboard(request: Request) -> HTMLResponse:
     agents_data: list[dict[str, Any]] = [a.health() for a in AGENTS]
+    revenue = _revenue_agent()
+    revenue_streams_data = revenue.stream_statuses() if revenue else []
     agents_running = sum(1 for a in agents_data if a["status"] == "running")
     total_actions = sum(a["actions_today"] for a in agents_data)
     system_healthy = all(a["status"] in ("running", "initializing", "stopped") for a in agents_data)
@@ -104,6 +108,7 @@ async def dashboard(request: Request) -> HTMLResponse:
         {
             "now": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
             "agents": agents_data,
+            "revenue_streams": revenue_streams_data,
             "agents_running": agents_running,
             "total_actions_today": total_actions,
             "system_healthy": system_healthy,
@@ -144,6 +149,76 @@ async def get_agent(agent_name: str) -> dict[str, Any]:
     return JSONResponse({"error": f"Agent '{agent_name}' not found"}, status_code=404)
 
 
+def _revenue_agent() -> RevenueAgent | None:
+    """Return the running revenue agent, if it has been started."""
+    for agent in AGENTS:
+        if isinstance(agent, RevenueAgent):
+            return agent
+    return None
+
+
+@app.get("/revenue/streams")
+async def revenue_streams() -> dict[str, Any]:
+    """Status of every registered revenue stream."""
+    agent = _revenue_agent()
+    if agent is None:
+        return {"streams": [], "enabled": 0, "total": 0}
+    statuses = agent.stream_statuses()
+    return {
+        "streams": statuses,
+        "enabled": sum(1 for s in statuses if s["enabled"]),
+        "total": len(statuses),
+    }
+
+
+@app.get("/revenue/streams/{stream_id}")
+async def revenue_stream(stream_id: str) -> dict[str, Any]:
+    """Status of a single revenue stream."""
+    agent = _revenue_agent()
+    stream = agent.get_stream(stream_id) if agent else None
+    if stream is None:
+        return JSONResponse(
+            {"error": f"Revenue stream '{stream_id}' not found"}, status_code=404
+        )
+    return stream.status()
+
+
+@app.post("/webhooks/stripe")
+async def stripe_webhook(
+    request: Request,
+    stripe_signature: str = Header(default="", alias="Stripe-Signature"),
+) -> dict[str, Any]:
+    """
+    Receive Stripe events for event-driven revenue updates.
+
+    The raw body is verified against ``STRIPE_WEBHOOK_SECRET`` before the
+    payload is trusted; unverified requests are rejected so the bus can never
+    be poisoned by a forged event.
+    """
+    secret = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+    if not secret:
+        return JSONResponse({"error": "webhook secret not configured"}, status_code=503)
+
+    raw_body = await request.body()
+    if not verify_webhook_signature(raw_body, stripe_signature, secret):
+        return JSONResponse({"error": "invalid signature"}, status_code=400)
+
+    try:
+        event = json.loads(raw_body)
+    except json.JSONDecodeError:
+        return JSONResponse({"error": "invalid payload"}, status_code=400)
+
+    event_type = event.get("type", "unknown")
+    await bus.publish(
+        Event(
+            topic=f"stripe.{event_type}",
+            source="stripe-webhook",
+            payload={"id": event.get("id"), "type": event_type},
+        )
+    )
+    return {"received": True, "type": event_type}
+
+
 @app.get("/events")
 async def recent_events(limit: int = 50) -> dict[str, Any]:
     events = [
@@ -163,10 +238,25 @@ async def recent_events(limit: int = 50) -> dict[str, Any]:
 async def metrics() -> dict[str, Any]:
     """Lightweight Prometheus-style metrics summary."""
     agents_data = [a.health() for a in AGENTS]
+    agent = _revenue_agent()
+    stream_statuses = agent.stream_statuses() if agent else []
     return {
         "agents_running": sum(1 for a in agents_data if a["status"] == "running"),
         "agents_stopped": sum(1 for a in agents_data if a["status"] == "stopped"),
         "agents_error": sum(1 for a in agents_data if a["status"] == "error"),
         "total_actions_today": sum(a["actions_today"] for a in agents_data),
         "bus_events_total": len(bus.recent_events(1000)),
+        "revenue_streams_enabled": sum(1 for s in stream_statuses if s["enabled"]),
+        "revenue_streams_total": len(stream_statuses),
+        "revenue_streams": {
+            s["id"]: {
+                "enabled": s["enabled"],
+                "configured": s["configured"],
+                "collect_count": s["collect_count"],
+                "action_count": s["action_count"],
+                "error_count": s["error_count"],
+                "metrics": s["last_metrics"],
+            }
+            for s in stream_statuses
+        },
     }

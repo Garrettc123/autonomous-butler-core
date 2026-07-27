@@ -45,6 +45,26 @@ spec:
             secretKeyRef:
               name: butler-secrets
               key: github-token
+        - name: STRIPE_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: butler-secrets
+              key: stripe-secret-key
+              optional: true
+        - name: STRIPE_WEBHOOK_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: butler-secrets
+              key: stripe-webhook-secret
+              optional: true
+        - name: STRIPE_USAGE_PRICE_ID
+          valueFrom:
+            secretKeyRef:
+              name: butler-secrets
+              key: stripe-usage-price-id
+              optional: true
+        - name: REVENUE_STREAMS
+          value: "all"
         resources:
           requests:
             memory: "512Mi"

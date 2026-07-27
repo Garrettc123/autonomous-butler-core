@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     # Stripe Revenue
     stripe_secret_key: str = ""
     stripe_webhook_secret: str = ""
+    stripe_usage_price_id: str = ""
+
+    # Revenue streams: comma-separated stream ids, or "all" for every stream.
+    # Valid ids: subscriptions, usage_based, one_time, dunning, expansion
+    revenue_streams: str = "all"
 
     # Infrastructure
     kubernetes_config_path: str = "/root/.kube/config"

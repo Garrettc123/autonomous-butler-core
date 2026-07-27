@@ -34,14 +34,20 @@ class StripeClient:
         *,
         base_url: str = STRIPE_API_BASE,
         timeout: float = DEFAULT_TIMEOUT,
+        transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self.secret_key = secret_key or os.getenv("STRIPE_SECRET_KEY", "")
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        # Injectable transport, used by tests to stub the Stripe API.
+        self.transport = transport
 
     @property
     def configured(self) -> bool:
         return bool(self.secret_key)
+
+    def _client(self) -> httpx.AsyncClient:
+        return httpx.AsyncClient(timeout=self.timeout, transport=self.transport)
 
     def _headers(self) -> dict[str, str]:
         return {"Authorization": "Bearer " + self.secret_key}
@@ -51,7 +57,7 @@ class StripeClient:
         if not self.configured:
             return None
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with self._client() as client:
                 resp = await client.get(
                     f"{self.base_url}/{path.lstrip('/')}",
                     headers=self._headers(),
@@ -68,7 +74,7 @@ class StripeClient:
         if not self.configured:
             return None
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with self._client() as client:
                 resp = await client.post(
                     f"{self.base_url}/{path.lstrip('/')}",
                     headers=self._headers(),
