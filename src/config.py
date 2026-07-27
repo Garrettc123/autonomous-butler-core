@@ -27,6 +27,21 @@ class Settings(BaseSettings):
     # Stripe Revenue
     stripe_secret_key: str = ""
     stripe_webhook_secret: str = ""
+    stripe_usage_price_id: str = ""
+    stripe_acquisition_price_id: str = ""
+
+    # Revenue streams: comma-separated stream ids, or "all" for every stream.
+    # Valid ids: acquisition, subscriptions, usage_based, one_time, dunning,
+    # expansion
+    revenue_streams: str = "all"
+
+    # Customer acquisition
+    # Comma-separated keywords describing the ideal customer profile; used to
+    # search for leads and to score how well a discovered account fits.
+    icp_keywords: str = ""
+    lead_qualify_score: int = 55
+    clearbit_api_key: str = ""
+    hunter_api_key: str = ""
 
     # Infrastructure
     kubernetes_config_path: str = "/root/.kube/config"
