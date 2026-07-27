@@ -76,8 +76,12 @@ jobs:
               echo "PR #$PR_NUMBER has no approval decision yet; skipping for now."
               exit 0
               ;;
-            REVIEW_REQUIRED|CHANGES_REQUESTED)
-              echo "PR #$PR_NUMBER is not approved yet (decision: $REVIEW_DECISION); skipping for now."
+            REVIEW_REQUIRED)
+              echo "PR #$PR_NUMBER still requires an approving review; skipping for now."
+              exit 0
+              ;;
+            CHANGES_REQUESTED)
+              echo "PR #$PR_NUMBER has requested changes; skipping for now."
               exit 0
               ;;
             *)
@@ -89,8 +93,24 @@ jobs:
           case "$MERGE_STATE" in
             CLEAN)
               ;;
-            BLOCKED|DIRTY|HAS_HOOKS|UNKNOWN|UNSTABLE)
-              echo "PR #$PR_NUMBER is not mergeable yet (state: $MERGE_STATE); skipping for now."
+            BLOCKED)
+              echo "PR #$PR_NUMBER is still blocked by branch protection or required checks; skipping for now."
+              exit 0
+              ;;
+            DIRTY)
+              echo "PR #$PR_NUMBER has merge conflicts; skipping for now."
+              exit 0
+              ;;
+            HAS_HOOKS)
+              echo "PR #$PR_NUMBER is waiting on required hooks; skipping for now."
+              exit 0
+              ;;
+            UNKNOWN)
+              echo "PR #$PR_NUMBER mergeability is still unknown; skipping for now."
+              exit 0
+              ;;
+            UNSTABLE)
+              echo "PR #$PR_NUMBER checks are still unstable; skipping for now."
               exit 0
               ;;
             *)
