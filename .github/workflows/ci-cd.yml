@@ -3,18 +3,16 @@ name: Autonomous Butler Core - CI/CD
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
   schedule:
     - cron: '0 */1 * * *'  # Every hour - CRITICAL
 
-jobs:
-  validate:
-    name: "Validate Multi-Agent System"
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: echo "✅ Autonomous Butler core operational"
+env:
+  IMAGE_NAME: ghcr.io/${{ github.repository }}
 
+jobs:
   test:
     name: "Test Agent Orchestration"
     runs-on: ubuntu-latest
@@ -23,35 +21,138 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: echo "✅ All 6 autonomous agents synchronized and tested"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Run test suite
+        run: pytest
+
+  build:
+    name: "Build & Push Image"
+    runs-on: ubuntu-latest
+    needs: [test]
+    if: github.event_name != 'pull_request'
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.meta.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Resolve image tag
+        id: meta
+        run: |
+          # Lowercase the repository name: GHCR rejects uppercase image paths.
+          IMAGE=$(echo "${IMAGE_NAME}" | tr '[:upper:]' '[:lower:]')
+          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.image }}:latest
+            ${{ steps.meta.outputs.image }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   deploy:
     name: "Deploy Butler Core"
     runs-on: ubuntu-latest
-    needs: [validate, test]
-    if: github.ref == 'refs/heads/main'
+    needs: [build]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     environment: production
     steps:
       - uses: actions/checkout@v4
-      - name: Deploy
-        run: echo "✅ Autonomous Butler deployed - 24/7 multi-agent system active"
+
+      - name: Check deployment credentials
+        id: creds
+        env:
+          KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
+        run: |
+          if [ -z "$KUBE_CONFIG" ]; then
+            echo "::warning::KUBE_CONFIG secret is not set - skipping cluster rollout."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Configure kubectl
+        if: steps.creds.outputs.ready == 'true'
+        env:
+          KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
+        run: |
+          mkdir -p "$HOME/.kube"
+          echo "$KUBE_CONFIG" | base64 -d > "$HOME/.kube/config"
+          chmod 600 "$HOME/.kube/config"
+
+      - name: Apply manifests
+        if: steps.creds.outputs.ready == 'true'
+        env:
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          STRIPE_USAGE_PRICE_ID: ${{ secrets.STRIPE_USAGE_PRICE_ID }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          kubectl apply -f k8s/namespace.yaml
+
+          # Build the secret from repo secrets rather than committing it.
+          kubectl create secret generic butler-secrets \
+            --namespace autonomous-butler \
+            --from-literal=anthropic-api-key="$ANTHROPIC_API_KEY" \
+            --from-literal=openai-api-key="$OPENAI_API_KEY" \
+            --from-literal=github-token="${{ secrets.GITHUB_TOKEN }}" \
+            --from-literal=linear-api-key="$LINEAR_API_KEY" \
+            --from-literal=stripe-secret-key="$STRIPE_SECRET_KEY" \
+            --from-literal=stripe-webhook-secret="$STRIPE_WEBHOOK_SECRET" \
+            --from-literal=stripe-usage-price-id="$STRIPE_USAGE_PRICE_ID" \
+            --from-literal=slack-webhook-url="$SLACK_WEBHOOK_URL" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          kubectl apply -f k8s/deployment.yaml
+          kubectl apply -f k8s/service.yaml
+          kubectl apply -f k8s/hpa.yaml
+
+      - name: Pin image to this commit
+        if: steps.creds.outputs.ready == 'true'
+        run: |
+          kubectl set image deployment/butler-core \
+            butler-core="${{ needs.build.outputs.image }}:${{ github.sha }}" \
+            --namespace autonomous-butler
+
+      - name: Wait for rollout
+        if: steps.creds.outputs.ready == 'true'
+        run: |
+          kubectl rollout status deployment/butler-core \
+            --namespace autonomous-butler --timeout=5m
+
+      - name: Roll back on failure
+        if: failure() && steps.creds.outputs.ready == 'true'
+        run: |
+          kubectl rollout undo deployment/butler-core --namespace autonomous-butler
 
   agent-status:
     name: "🤖 Agent Status Monitor"
     runs-on: ubuntu-latest
+    needs: [test]
     if: always()
     steps:
       - name: Agent Status
         run: |
           echo "🤖 AUTONOMOUS BUTLER - MULTI-AGENT SYSTEM"
           echo "========================================"
-          echo "DevOps Agent: ACTIVE"
-          echo "Revenue Ops Agent: ACTIVE"
-          echo "Security Agent: ACTIVE"
-          echo "PM Agent: ACTIVE"
-          echo "Support Agent: ACTIVE"
-          echo "Infrastructure Agent: ACTIVE"
+          echo "Test suite: ${{ needs.test.result }}"
+          echo "Agents: devops, revenue, security, pm, support, infrastructure"
+          echo "Revenue streams: subscriptions, usage_based, one_time, dunning, expansion"
           echo "========================================"
-          echo "Status: All agents working 24/7"
-          echo "Zero human intervention required"
-          echo "✅ Enterprise automation at scale"

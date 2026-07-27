@@ -2,6 +2,23 @@
 
 All notable changes to the Autonomous Butler Core project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- 💰 Pluggable `RevenueStream` abstraction with a per-environment stream registry
+- 💳 Five revenue streams: `subscriptions`, `usage_based`, `one_time`, `dunning`, `expansion`
+- 🔁 Failed-payment recovery with exponential backoff (1h → 6h → 24h → 72h)
+- 📈 Seat-growth upsell detection alongside existing churn alerts
+- 🔌 `GET /revenue/streams` and `GET /revenue/streams/{id}` endpoints
+- 🪝 `POST /webhooks/stripe` with HMAC signature and replay-window verification
+- 📊 Per-stream counters in `/metrics` and a Revenue Streams dashboard section
+- ⚙️ `REVENUE_STREAMS`, `STRIPE_WEBHOOK_SECRET` and `STRIPE_USAGE_PRICE_ID` configuration
+
+### Changed
+- ♻️ `RevenueAgent` is now a stream orchestrator and holds no Stripe logic
+- 🚀 CI/CD pipeline now runs the real test suite, builds/pushes the image, and
+  performs a real Kubernetes rollout with automatic rollback on failure
+
 ## [2.0.0] - 2026-02-07
 
 ### Added

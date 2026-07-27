@@ -67,11 +67,48 @@ Event Sources → Event Mesh (Kafka) → Butler Orchestrator → 6 AI Agents →
 ### 6 Specialized Agents
 
 1. **DevOps Agent** - Deployments, rollbacks, scaling
-2. **Revenue Agent** - Payment retry, churn prevention
+2. **Revenue Agent** - Orchestrates all revenue streams (see below)
 3. **Security Agent** - Vulnerability scanning, patching
 4. **Infrastructure Agent** - Self-healing, auto-scaling
 5. **PM Agent** - Ticket automation, sprint reports
 6. **Support Agent** - RAG Q&A, auto-responses
+
+### 💰 Revenue Streams
+
+The Revenue Agent is a thin orchestrator over pluggable **revenue streams**. Each
+stream models one monetizable channel, is enabled per environment, and degrades
+to a no-op when its credentials are missing.
+
+| Stream id | What it does | Events emitted |
+|-----------|--------------|----------------|
+| `subscriptions` | Normalizes active Stripe subscriptions into MRR/ARR | `revenue.mrr_snapshot` |
+| `usage_based` | Flushes buffered metered usage to Stripe usage records | `revenue.usage_reported` |
+| `one_time` | Aggregates non-subscription charges, net of refunds | `revenue.one_time_snapshot` |
+| `dunning` | Retries failed invoices on exponential backoff (1h → 6h → 24h → 72h) | `revenue.payment_recovered`, `revenue.payment_retry_failed` |
+| `expansion` | Raises churn alerts and flags seat-growth upsells | `revenue.churn_alert`, `revenue.upsell_opportunity` |
+
+Select which streams run with the `REVENUE_STREAMS` environment variable:
+
+```bash
+REVENUE_STREAMS=all                    # every stream (default)
+REVENUE_STREAMS=subscriptions,dunning  # only these two
+```
+
+Inspect them at runtime:
+
+```bash
+curl http://localhost:8000/revenue/streams          # all streams
+curl http://localhost:8000/revenue/streams/dunning  # one stream
+curl http://localhost:8000/metrics                  # per-stream counters
+```
+
+Stripe can also push events directly to `POST /webhooks/stripe`. Requests are
+verified against `STRIPE_WEBHOOK_SECRET` and rejected if the signature or
+timestamp does not check out.
+
+**Adding a new stream:** subclass `RevenueStream`, implement `collect()`, and
+register it in `src/revenue/streams/__init__.py` — no changes to the agent are
+required.
 
 ## 📖 Documentation
 
