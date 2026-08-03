@@ -38,7 +38,9 @@ class Settings(BaseSettings):
     # Customer acquisition
     # Comma-separated keywords describing the ideal customer profile; used to
     # search for leads and to score how well a discovered account fits.
-    icp_keywords: str = ""
+    # Production default keeps the acquisition stream active when the env var
+    # is unset (override via ICP_KEYWORDS or repo variable).
+    icp_keywords: str = "devops,platform-engineering,sre,ai-ops,kubernetes"
     lead_qualify_score: int = 55
     clearbit_api_key: str = ""
     hunter_api_key: str = ""
