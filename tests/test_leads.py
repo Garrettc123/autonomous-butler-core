@@ -166,6 +166,8 @@ def test_merge_rejects_invalid_values_and_reports_no_change():
     assert lead.merge("provider", {"email": "bogus", "company_size": -3}) is False
     assert lead.email == ""
     assert lead.company_size == 0
+    # Provider must not be credited when nothing was actually merged.
+    assert lead.enriched_by == []
 
 
 def test_merge_accumulates_unique_signals():
@@ -468,7 +470,7 @@ async def test_enricher_swallows_http_errors():
 
 def billing_routes(**overrides) -> dict[str, object]:
     routes: dict[str, object] = {
-        "GET customers": {"data": []},
+        "GET customers/search": {"data": []},
         "POST customers": {"id": "cus_1"},
         "invoiceitems": {"id": "ii_1"},
         "invoices/in_1/send": {
@@ -544,7 +546,7 @@ async def test_acquisition_without_price_reports_pipeline_only():
 
 @pytest.mark.asyncio
 async def test_acquisition_never_bills_existing_customer():
-    routes = billing_routes(**{"GET customers": {"data": [{"id": "cus_existing"}]}})
+    routes = billing_routes(**{"GET customers/search": {"data": [{"id": "cus_existing"}]}})
     stream = build_stream([qualified_lead()], routes)
     result = await stream.run()
 
@@ -554,7 +556,7 @@ async def test_acquisition_never_bills_existing_customer():
 
 @pytest.mark.asyncio
 async def test_acquisition_treats_stripe_outage_as_existing_customer():
-    routes = billing_routes(**{"GET customers": 500})
+    routes = billing_routes(**{"GET customers/search": 500})
     stream = build_stream([qualified_lead()], routes)
     result = await stream.run()
 

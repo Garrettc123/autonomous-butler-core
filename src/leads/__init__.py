@@ -153,7 +153,7 @@ class Lead:
         if not self.domain and self.email:
             self.domain = normalize_domain(self.email)
 
-        if provider and provider not in self.enriched_by:
+        if changed and provider and provider not in self.enriched_by:
             self.enriched_by.append(provider)
         return changed
 

@@ -242,7 +242,11 @@ class AcquisitionStream(RevenueStream):
 
     async def _customer_exists(self, email: str) -> bool:
         """Whether Stripe already knows this email, to avoid double billing."""
-        existing = await self.client.get("customers", {"email": email, "limit": 1})
+        # Use the Customer Search API — the list endpoint's email filter is not
+        # guaranteed to filter reliably, which could cause missed deduplication.
+        existing = await self.client.get(
+            "customers/search", {"query": f"email:'{email}'", "limit": 1}
+        )
         if existing is None:
             # Treat an unreachable Stripe as "already exists" so a transient
             # outage can never cause duplicate customers or invoices.
