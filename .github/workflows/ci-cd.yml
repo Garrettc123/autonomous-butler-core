@@ -162,5 +162,5 @@ jobs:
           echo "========================================"
           echo "Test suite: ${{ needs.test.result }}"
           echo "Agents: devops, revenue, security, pm, support, infrastructure"
-          echo "Revenue streams: subscriptions, usage_based, one_time, dunning, expansion"
+          echo "Revenue streams: subscriptions, usage_based, one_time, dunning, expansion, acquisition"
           echo "========================================"
