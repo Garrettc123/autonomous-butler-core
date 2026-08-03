@@ -11,6 +11,8 @@ on:
 
 env:
   IMAGE_NAME: ghcr.io/${{ github.repository }}
+  # Default ICP so acquisition is not a pure no-op when the var is unset
+  DEFAULT_ICP_KEYWORDS: devops,platform-engineering,sre,ai-ops,kubernetes
 
 jobs:
   test:
@@ -57,8 +59,6 @@ jobs:
         run: |
           # GHCR rejects uppercase image paths, so lowercase the repository name.
           echo "image=${IMAGE_NAME,,}" >> "$GITHUB_OUTPUT"
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
@@ -70,29 +70,74 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  deploy:
-    name: "Deploy Butler Core"
+  # ── Resolve revenue credentials once for both deploy targets ──────────────
+  resolve-secrets:
+    name: "Resolve production secrets"
     runs-on: ubuntu-latest
-    needs: [build]
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    outputs:
+      icp: ${{ steps.resolve.outputs.icp }}
+      has_acquisition: ${{ steps.resolve.outputs.has_acquisition }}
+      has_github_pat: ${{ steps.resolve.outputs.has_github_pat }}
+      has_kube: ${{ steps.resolve.outputs.has_kube }}
+      has_railway: ${{ steps.resolve.outputs.has_railway }}
+    steps:
+      - name: Resolve
+        id: resolve
+        env:
+          ICP_FROM_VARS: ${{ vars.ICP_KEYWORDS }}
+          STRIPE_ACQUISITION_PRICE_ID: ${{ secrets.STRIPE_ACQUISITION_PRICE_ID }}
+          GH_PAT: ${{ secrets.GH_PAT }}
+          GITHUB_PAT: ${{ secrets.GITHUB_PAT }}
+          KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          # ICP_KEYWORDS: repo variable preferred, else production default
+          if [ -n "$ICP_FROM_VARS" ]; then
+            echo "icp=$ICP_FROM_VARS" >> "$GITHUB_OUTPUT"
+            echo "Using ICP_KEYWORDS from repo variable"
+          else
+            echo "icp=${{ env.DEFAULT_ICP_KEYWORDS }}" >> "$GITHUB_OUTPUT"
+            echo "Using default ICP_KEYWORDS (${{ env.DEFAULT_ICP_KEYWORDS }})"
+          fi
+
+          if [ -n "$STRIPE_ACQUISITION_PRICE_ID" ]; then
+            echo "has_acquisition=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_acquisition=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::STRIPE_ACQUISITION_PRICE_ID not set — acquisition will qualify leads but will not invoice"
+          fi
+
+          # Prefer explicit PAT secrets over the automatic GITHUB_TOKEN
+          if [ -n "$GH_PAT" ] || [ -n "$GITHUB_PAT" ]; then
+            echo "has_github_pat=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_github_pat=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Neither GH_PAT nor GITHUB_PAT is set — lead discovery will use limited Actions token or no-op"
+          fi
+
+          if [ -n "$KUBE_CONFIG" ]; then
+            echo "has_kube=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_kube=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if [ -n "$RAILWAY_TOKEN" ]; then
+            echo "has_railway=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_railway=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  deploy-k8s:
+    name: "Deploy Butler Core (Kubernetes)"
+    runs-on: ubuntu-latest
+    needs: [build, resolve-secrets]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && needs.resolve-secrets.outputs.has_kube == 'true'
     environment: production
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check deployment credentials
-        id: creds
-        env:
-          KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
-        run: |
-          if [ -z "$KUBE_CONFIG" ]; then
-            echo "::warning::KUBE_CONFIG secret is not set - skipping cluster rollout."
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "ready=true" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Configure kubectl
-        if: steps.creds.outputs.ready == 'true'
         env:
           KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
         run: |
@@ -101,7 +146,6 @@ jobs:
           chmod 600 "$HOME/.kube/config"
 
       - name: Apply manifests
-        if: steps.creds.outputs.ready == 'true'
         env:
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
           STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
@@ -109,20 +153,21 @@ jobs:
           STRIPE_ACQUISITION_PRICE_ID: ${{ secrets.STRIPE_ACQUISITION_PRICE_ID }}
           CLEARBIT_API_KEY: ${{ secrets.CLEARBIT_API_KEY }}
           HUNTER_API_KEY: ${{ secrets.HUNTER_API_KEY }}
-          ICP_KEYWORDS: ${{ vars.ICP_KEYWORDS }}
+          ICP_KEYWORDS: ${{ needs.resolve-secrets.outputs.icp }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          # Prefer GH_PAT / GITHUB_PAT; fall back to automatic token
+          LEAD_GITHUB_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_PAT || secrets.GITHUB_TOKEN }}
         run: |
           kubectl apply -f k8s/namespace.yaml
 
-          # Build the secret from repo secrets rather than committing it.
           kubectl create secret generic butler-secrets \
             --namespace autonomous-butler \
             --from-literal=anthropic-api-key="$ANTHROPIC_API_KEY" \
             --from-literal=openai-api-key="$OPENAI_API_KEY" \
-            --from-literal=github-token="${{ secrets.GITHUB_TOKEN }}" \
+            --from-literal=github-token="$LEAD_GITHUB_TOKEN" \
             --from-literal=linear-api-key="$LINEAR_API_KEY" \
             --from-literal=stripe-secret-key="$STRIPE_SECRET_KEY" \
             --from-literal=stripe-webhook-secret="$STRIPE_WEBHOOK_SECRET" \
@@ -139,27 +184,80 @@ jobs:
           kubectl apply -f k8s/hpa.yaml
 
       - name: Pin image to this commit
-        if: steps.creds.outputs.ready == 'true'
         run: |
           kubectl set image deployment/butler-core \
             butler-core="${{ needs.build.outputs.image }}:${{ github.sha }}" \
             --namespace autonomous-butler
 
       - name: Wait for rollout
-        if: steps.creds.outputs.ready == 'true'
         run: |
           kubectl rollout status deployment/butler-core \
             --namespace autonomous-butler --timeout=5m
 
       - name: Roll back on failure
-        if: failure() && steps.creds.outputs.ready == 'true'
+        if: failure()
         run: |
           kubectl rollout undo deployment/butler-core --namespace autonomous-butler
+
+  deploy-railway:
+    name: "Deploy Butler Core (Railway)"
+    runs-on: ubuntu-latest
+    needs: [build, resolve-secrets]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && needs.resolve-secrets.outputs.has_railway == 'true'
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Deploy to Railway
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: railway up --detach
+
+      - name: Sync revenue env vars to Railway
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          # Only set vars that are actually present so we never wipe live values with empties
+          set_if_present() {
+            local key="$1" value="$2"
+            if [ -n "$value" ]; then
+              railway variables set "$key=$value"
+              echo "set $key"
+            else
+              echo "skip $key (empty)"
+            fi
+          }
+
+          set_if_present STRIPE_SECRET_KEY '${{ secrets.STRIPE_SECRET_KEY }}'
+          set_if_present STRIPE_WEBHOOK_SECRET '${{ secrets.STRIPE_WEBHOOK_SECRET }}'
+          set_if_present STRIPE_USAGE_PRICE_ID '${{ secrets.STRIPE_USAGE_PRICE_ID }}'
+          set_if_present STRIPE_ACQUISITION_PRICE_ID '${{ secrets.STRIPE_ACQUISITION_PRICE_ID }}'
+          set_if_present CLEARBIT_API_KEY '${{ secrets.CLEARBIT_API_KEY }}'
+          set_if_present HUNTER_API_KEY '${{ secrets.HUNTER_API_KEY }}'
+          set_if_present ANTHROPIC_API_KEY '${{ secrets.ANTHROPIC_API_KEY }}'
+          set_if_present OPENAI_API_KEY '${{ secrets.OPENAI_API_KEY }}'
+          set_if_present LINEAR_API_KEY '${{ secrets.LINEAR_API_KEY }}'
+          set_if_present SLACK_WEBHOOK_URL '${{ secrets.SLACK_WEBHOOK_URL }}'
+
+          # Always push resolved ICP + preferred GitHub PAT
+          railway variables set "ICP_KEYWORDS=${{ needs.resolve-secrets.outputs.icp }}"
+          railway variables set "GITHUB_TOKEN=${{ secrets.GH_PAT || secrets.GITHUB_PAT || secrets.GITHUB_TOKEN }}"
+          railway variables set "REVENUE_STREAMS=all"
+          railway variables set "ENVIRONMENT=production"
+          echo "Railway revenue env synced"
 
   agent-status:
     name: "🤖 Agent Status Monitor"
     runs-on: ubuntu-latest
-    needs: [test]
+    needs: [test, resolve-secrets]
     if: always()
     steps:
       - name: Agent Status
@@ -167,6 +265,11 @@ jobs:
           echo "🤖 AUTONOMOUS BUTLER - MULTI-AGENT SYSTEM"
           echo "========================================"
           echo "Test suite: ${{ needs.test.result }}"
+          echo "ICP_KEYWORDS: ${{ needs.resolve-secrets.outputs.icp }}"
+          echo "Acquisition price set: ${{ needs.resolve-secrets.outputs.has_acquisition }}"
+          echo "GitHub PAT set: ${{ needs.resolve-secrets.outputs.has_github_pat }}"
+          echo "K8s deploy ready: ${{ needs.resolve-secrets.outputs.has_kube }}"
+          echo "Railway deploy ready: ${{ needs.resolve-secrets.outputs.has_railway }}"
           echo "Agents: devops, revenue, security, pm, support, infrastructure"
-          echo "Revenue streams: subscriptions, usage_based, one_time, dunning, expansion"
+          echo "Revenue streams: acquisition, subscriptions, usage_based, one_time, dunning, expansion"
           echo "========================================"
