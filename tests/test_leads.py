@@ -19,6 +19,7 @@ from src.revenue.streams.acquisition import (
     _parse_keywords,
     _parse_qualify_score,
 )
+from src.leads.outreach import EmailChannel, OutreachAgent, OutreachResult
 from src.revenue.stripe_client import StripeClient
 
 
@@ -609,3 +610,112 @@ async def test_acquisition_status_exposes_pipeline():
     assert status["billing_enabled"] is True
     assert status["pipeline"]["qualified_total"] == 1
     assert status["pipeline"]["sources"][0]["id"] == "static"
+
+
+# ---------------------------------------------------------------------------
+# Outreach — EmailChannel (Resend)
+# ---------------------------------------------------------------------------
+
+
+def _resend_transport(status: int, body: dict | None = None) -> httpx.MockTransport:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "api.resend.com":
+            return httpx.Response(status, json=body or {})
+        return httpx.Response(404, json={"error": "unexpected"})
+
+    return httpx.MockTransport(handler)
+
+
+def _email_channel(monkeypatch, transport: httpx.MockTransport) -> EmailChannel:
+    monkeypatch.setenv("RESEND_API_KEY", "re_test_key")
+    monkeypatch.setenv("OUTREACH_FROM_EMAIL", "outreach@garcar.io")
+    channel = EmailChannel()
+
+    def patched_post(url, **kwargs):
+        return httpx.Client(transport=transport).post(url, **kwargs)
+
+    monkeypatch.setattr(httpx, "post", patched_post)
+    return channel
+
+
+def test_email_channel_not_configured_without_env(monkeypatch):
+    monkeypatch.delenv("RESEND_API_KEY", raising=False)
+    monkeypatch.delenv("OUTREACH_FROM_EMAIL", raising=False)
+    channel = EmailChannel()
+    assert channel.configured is False
+    result = channel.send(qualified_lead())
+    assert result.success is False
+    assert "not configured" in result.detail
+
+
+def test_email_channel_not_configured_missing_api_key(monkeypatch):
+    monkeypatch.delenv("RESEND_API_KEY", raising=False)
+    monkeypatch.setenv("OUTREACH_FROM_EMAIL", "outreach@garcar.io")
+    channel = EmailChannel()
+    assert channel.configured is False
+
+
+def test_email_channel_not_configured_missing_from_email(monkeypatch):
+    monkeypatch.setenv("RESEND_API_KEY", "re_test_key")
+    monkeypatch.delenv("OUTREACH_FROM_EMAIL", raising=False)
+    channel = EmailChannel()
+    assert channel.configured is False
+
+
+def test_email_channel_rejects_non_business_email(monkeypatch):
+    monkeypatch.setenv("RESEND_API_KEY", "re_test_key")
+    monkeypatch.setenv("OUTREACH_FROM_EMAIL", "outreach@garcar.io")
+    channel = EmailChannel()
+    lead = Lead(lead_id="l1", source="s", email="person@gmail.com")
+    result = channel.send(lead)
+    assert result.success is False
+    assert "business email" in result.detail
+
+
+def test_email_channel_send_success(monkeypatch):
+    transport = _resend_transport(200, {"id": "msg_abc123"})
+    channel = _email_channel(monkeypatch, transport)
+    result = channel.send(qualified_lead())
+    assert result.success is True
+    assert result.detail == "msg_abc123"
+    assert result.channel == "email"
+
+
+def test_email_channel_send_failure_non_2xx(monkeypatch):
+    transport = _resend_transport(422, {"message": "invalid address"})
+    channel = _email_channel(monkeypatch, transport)
+    result = channel.send(qualified_lead())
+    assert result.success is False
+    assert result.detail != ""
+
+
+def test_email_channel_send_failure_exception(monkeypatch):
+    monkeypatch.setenv("RESEND_API_KEY", "re_test_key")
+    monkeypatch.setenv("OUTREACH_FROM_EMAIL", "outreach@garcar.io")
+    channel = EmailChannel()
+
+    def raise_exc(*args, **kwargs):
+        raise httpx.ConnectError("connection refused")
+
+    monkeypatch.setattr(httpx, "post", raise_exc)
+    result = channel.send(qualified_lead())
+    assert result.success is False
+    assert "connection refused" in result.detail
+
+
+def test_outreach_agent_default_channel_is_email():
+    agent = OutreachAgent()
+    assert any(c.id == "email" for c in agent.channels)
+
+
+def test_outreach_agent_skips_already_contacted(monkeypatch):
+    transport = _resend_transport(200, {"id": "msg_1"})
+    channel = _email_channel(monkeypatch, transport)
+    agent = OutreachAgent(channels=[channel])
+    lead = qualified_lead()
+
+    first = agent.contact(lead)
+    assert first is not None and first.success is True
+
+    second = agent.contact(lead)
+    assert second is None  # skipped
