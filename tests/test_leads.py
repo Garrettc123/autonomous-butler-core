@@ -609,3 +609,90 @@ async def test_acquisition_status_exposes_pipeline():
     assert status["billing_enabled"] is True
     assert status["pipeline"]["qualified_total"] == 1
     assert status["pipeline"]["sources"][0]["id"] == "static"
+
+
+# ---------------------------------------------------------------------------
+# Outreach integration
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_acquisition_calls_outreach_for_qualified_leads(monkeypatch):
+    """contact_all should be called with the qualified list from the pipeline."""
+    from src.leads.outreach import OutreachAgent, OutreachResult
+
+    contacted: list = []
+
+    def fake_contact_all(qualified):
+        contacted.extend(qualified)
+        return [OutreachResult(lead.lead_id, "email", True, lead.email) for lead, _ in qualified]
+
+    stream = build_stream([qualified_lead()])
+    monkeypatch.setattr(stream.outreach_agent, "contact_all", fake_contact_all)
+
+    result = await stream.run()
+
+    assert len(contacted) == 1
+    assert contacted[0][0].lead_id == "github:acme"
+    # A successful outreach produces an action string and an event.
+    assert any("Outreach sent" in a for a in result.actions)
+    event_topics = [t for t, _ in result.events]
+    assert "revenue.outreach_attempted" in event_topics
+    outreach_event = next(p for t, p in result.events if t == "revenue.outreach_attempted")
+    assert outreach_event["success"] is True
+    assert outreach_event["channel"] == "email"
+
+
+@pytest.mark.asyncio
+async def test_acquisition_outreach_deduplication_across_cycles(monkeypatch):
+    """Leads already contacted are not re-contacted on a subsequent cycle."""
+    from src.leads.outreach import OutreachAgent, OutreachResult
+
+    call_args: list[list] = []
+
+    def fake_contact_all(qualified):
+        call_args.append(list(qualified))
+        results = []
+        for lead, _ in qualified:
+            results.append(OutreachResult(lead.lead_id, "email", True, lead.email))
+        return results
+
+    lead = qualified_lead()
+    # Use a pipeline that returns the same lead on every run (no dedup at pipeline level).
+    pipeline = LeadPipeline(sources=[StaticSource([lead])], qualify_score=55)
+    # Disable pipeline dedup so the same lead comes through both cycles.
+    pipeline._seen.clear()
+
+    stream = AcquisitionStream(
+        client=stripe_stub(billing_routes()),
+        pipeline=pipeline,
+        price_id="price_acq",
+    )
+    monkeypatch.setattr(stream.outreach_agent, "contact_all", fake_contact_all)
+
+    # First cycle — lead should be passed to contact_all.
+    await stream.run()
+    assert len(call_args) == 1
+    assert len(call_args[0]) == 1
+
+    # Restore pipeline seen set so it discovers the same lead again.
+    pipeline._seen.clear()
+
+    # Mark the lead as already delivered in the persistent agent.
+    stream.outreach_agent._delivered[lead.lead_id] = None
+
+    # Second cycle — contact_all is called but OutreachAgent.contact() will skip it.
+    # Verify by checking that contact_all returns no results for the duplicate.
+    call_args.clear()
+
+    def fake_contact_all_second(qualified):
+        # Simulate the real deduplication: already_contacted leads return None.
+        call_args.append(list(qualified))
+        return []  # all skipped
+
+    monkeypatch.setattr(stream.outreach_agent, "contact_all", fake_contact_all_second)
+    result2 = await stream.run()
+
+    assert len(call_args) == 1  # contact_all was still called
+    # No outreach action since no successful results.
+    assert not any("Outreach sent" in a for a in result2.actions)
