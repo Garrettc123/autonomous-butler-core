@@ -17,10 +17,7 @@ from __future__ import annotations
 
 import logging
 import os
-import smtplib
-import ssl
 from dataclasses import dataclass, field
-from email.mime.text import MIMEText
 from typing import Any
 
 import httpx
@@ -127,43 +124,47 @@ class OutreachResult:
 
 class EmailChannel:
     """
-    Send via SMTP. Reads credentials from environment:
-      OUTREACH_SMTP_HOST, OUTREACH_SMTP_PORT (default 465)
-      OUTREACH_SMTP_USER, OUTREACH_SMTP_PASS
+    Send via Resend HTTP API. Reads credentials from environment:
+      RESEND_API_KEY
       OUTREACH_FROM_EMAIL
     """
 
     id = "email"
 
+    _RESEND_URL = "https://api.resend.com/emails"
+
     def __init__(self) -> None:
-        self.host = os.getenv("OUTREACH_SMTP_HOST", "")
-        self.port = int(os.getenv("OUTREACH_SMTP_PORT", "465"))
-        self.user = os.getenv("OUTREACH_SMTP_USER", "")
-        self.password = os.getenv("OUTREACH_SMTP_PASS", "")
+        self.api_key = os.getenv("RESEND_API_KEY", "")
         self.from_email = os.getenv("OUTREACH_FROM_EMAIL", "")
 
     @property
     def configured(self) -> bool:
-        return all([self.host, self.user, self.password, self.from_email])
+        return bool(self.api_key and self.from_email)
 
     def send(self, lead: Lead) -> OutreachResult:
         if not self.configured:
-            return OutreachResult(lead.lead_id, self.id, False, "smtp not configured")
+            return OutreachResult(lead.lead_id, self.id, False, "resend not configured")
         if not is_business_email(lead.email):
             return OutreachResult(lead.lead_id, self.id, False, "no business email")
 
-        msg = MIMEText(build_body(lead), "plain")
-        msg["Subject"] = build_subject(lead)
-        msg["From"] = f"{SENDER_NAME} <{self.from_email}>"
-        msg["To"] = lead.email
+        payload = {
+            "from": f"{SENDER_NAME} <{self.from_email}>",
+            "to": [lead.email],
+            "subject": build_subject(lead),
+            "text": build_body(lead),
+        }
 
         try:
-            ctx = ssl.create_default_context()
-            with smtplib.SMTP_SSL(self.host, self.port, context=ctx) as server:
-                server.login(self.user, self.password)
-                server.sendmail(self.from_email, [lead.email], msg.as_string())
+            resp = httpx.post(
+                self._RESEND_URL,
+                headers={"Authorization": f"******"},
+                json=payload,
+                timeout=15.0,
+            )
+            resp.raise_for_status()
+            message_id = resp.json().get("id", lead.email)
             logger.info("Email sent to %s <%s>", lead.lead_id, lead.email)
-            return OutreachResult(lead.lead_id, self.id, True, lead.email)
+            return OutreachResult(lead.lead_id, self.id, True, message_id)
         except Exception as exc:  # noqa: BLE001
             logger.warning("Email failed for %s: %s", lead.lead_id, exc)
             return OutreachResult(lead.lead_id, self.id, False, str(exc))

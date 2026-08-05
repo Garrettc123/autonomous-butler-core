@@ -19,6 +19,7 @@ from src.revenue.streams.acquisition import (
     _parse_keywords,
     _parse_qualify_score,
 )
+from src.leads.outreach import EmailChannel, OutreachAgent, OutreachResult
 from src.revenue.stripe_client import StripeClient
 
 
@@ -612,6 +613,7 @@ async def test_acquisition_status_exposes_pipeline():
 
 
 # ---------------------------------------------------------------------------
+<<<<<<< HEAD
 # Outreach integration
 # ---------------------------------------------------------------------------
 
@@ -619,8 +621,6 @@ async def test_acquisition_status_exposes_pipeline():
 @pytest.mark.asyncio
 async def test_acquisition_calls_outreach_for_qualified_leads(monkeypatch):
     """contact_all should be called with the qualified list from the pipeline."""
-    from src.leads.outreach import OutreachAgent, OutreachResult
-
     contacted: list = []
 
     def fake_contact_all(qualified):
@@ -634,7 +634,6 @@ async def test_acquisition_calls_outreach_for_qualified_leads(monkeypatch):
 
     assert len(contacted) == 1
     assert contacted[0][0].lead_id == "github:acme"
-    # A successful outreach produces an action string and an event.
     assert any("Outreach sent" in a for a in result.actions)
     event_topics = [t for t, _ in result.events]
     assert "revenue.outreach_attempted" in event_topics
@@ -645,22 +644,18 @@ async def test_acquisition_calls_outreach_for_qualified_leads(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_acquisition_outreach_deduplication_across_cycles(monkeypatch):
-    """Leads already contacted are not re-contacted on a subsequent cycle."""
-    from src.leads.outreach import OutreachAgent, OutreachResult
+    """Persistent outreach agent should not resend to the same lead twice."""
+    sent_ids: list[str] = []
 
-    call_args: list[list] = []
-
-    def fake_contact_all(qualified):
-        call_args.append(list(qualified))
-        results = []
-        for lead, _ in qualified:
-            results.append(OutreachResult(lead.lead_id, "email", True, lead.email))
-        return results
+    def fake_contact(lead):
+        if stream.outreach_agent.already_contacted(lead.lead_id):
+            return None
+        stream.outreach_agent._delivered[lead.lead_id] = None
+        sent_ids.append(lead.lead_id)
+        return OutreachResult(lead.lead_id, "email", True, lead.email)
 
     lead = qualified_lead()
-    # Use a pipeline that returns the same lead on every run (no dedup at pipeline level).
     pipeline = LeadPipeline(sources=[StaticSource([lead])], qualify_score=55)
-    # Disable pipeline dedup so the same lead comes through both cycles.
     pipeline._seen.clear()
 
     stream = AcquisitionStream(
@@ -668,31 +663,122 @@ async def test_acquisition_outreach_deduplication_across_cycles(monkeypatch):
         pipeline=pipeline,
         price_id="price_acq",
     )
-    monkeypatch.setattr(stream.outreach_agent, "contact_all", fake_contact_all)
+    monkeypatch.setattr(stream.outreach_agent, "contact", fake_contact)
 
-    # First cycle — lead should be passed to contact_all.
-    await stream.run()
-    assert len(call_args) == 1
-    assert len(call_args[0]) == 1
+    result1 = await stream.run()
+    assert sent_ids == ["github:acme"]
+    assert any("Outreach sent" in a for a in result1.actions)
 
-    # Restore pipeline seen set so it discovers the same lead again.
     pipeline._seen.clear()
 
-    # Mark the lead as already delivered in the persistent agent.
-    stream.outreach_agent._delivered[lead.lead_id] = None
-
-    # Second cycle — contact_all is called but OutreachAgent.contact() will skip it.
-    # Verify by checking that contact_all returns no results for the duplicate.
-    call_args.clear()
-
-    def fake_contact_all_second(qualified):
-        # Simulate the real deduplication: already_contacted leads return None.
-        call_args.append(list(qualified))
-        return []  # all skipped
-
-    monkeypatch.setattr(stream.outreach_agent, "contact_all", fake_contact_all_second)
     result2 = await stream.run()
 
-    assert len(call_args) == 1  # contact_all was still called
-    # No outreach action since no successful results.
+    assert sent_ids == ["github:acme"]
     assert not any("Outreach sent" in a for a in result2.actions)
+
+# Outreach — EmailChannel (Resend)
+# ---------------------------------------------------------------------------
+
+
+def _resend_transport(status: int, body: dict | None = None) -> httpx.MockTransport:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "api.resend.com":
+            return httpx.Response(status, json=body or {})
+        return httpx.Response(404, json={"error": "unexpected"})
+
+    return httpx.MockTransport(handler)
+
+
+def _email_channel(monkeypatch, transport: httpx.MockTransport) -> EmailChannel:
+    monkeypatch.setenv("RESEND_API_KEY", "re_test_key")
+    monkeypatch.setenv("OUTREACH_FROM_EMAIL", "outreach@garcar.io")
+    channel = EmailChannel()
+
+    def patched_post(url, **kwargs):
+        return httpx.Client(transport=transport).post(url, **kwargs)
+
+    monkeypatch.setattr(httpx, "post", patched_post)
+    return channel
+
+
+def test_email_channel_not_configured_without_env(monkeypatch):
+    monkeypatch.delenv("RESEND_API_KEY", raising=False)
+    monkeypatch.delenv("OUTREACH_FROM_EMAIL", raising=False)
+    channel = EmailChannel()
+    assert channel.configured is False
+    result = channel.send(qualified_lead())
+    assert result.success is False
+    assert "not configured" in result.detail
+
+
+def test_email_channel_not_configured_missing_api_key(monkeypatch):
+    monkeypatch.delenv("RESEND_API_KEY", raising=False)
+    monkeypatch.setenv("OUTREACH_FROM_EMAIL", "outreach@garcar.io")
+    channel = EmailChannel()
+    assert channel.configured is False
+
+
+def test_email_channel_not_configured_missing_from_email(monkeypatch):
+    monkeypatch.setenv("RESEND_API_KEY", "re_test_key")
+    monkeypatch.delenv("OUTREACH_FROM_EMAIL", raising=False)
+    channel = EmailChannel()
+    assert channel.configured is False
+
+
+def test_email_channel_rejects_non_business_email(monkeypatch):
+    monkeypatch.setenv("RESEND_API_KEY", "re_test_key")
+    monkeypatch.setenv("OUTREACH_FROM_EMAIL", "outreach@garcar.io")
+    channel = EmailChannel()
+    lead = Lead(lead_id="l1", source="s", email="person@gmail.com")
+    result = channel.send(lead)
+    assert result.success is False
+    assert "business email" in result.detail
+
+
+def test_email_channel_send_success(monkeypatch):
+    transport = _resend_transport(200, {"id": "msg_abc123"})
+    channel = _email_channel(monkeypatch, transport)
+    result = channel.send(qualified_lead())
+    assert result.success is True
+    assert result.detail == "msg_abc123"
+    assert result.channel == "email"
+
+
+def test_email_channel_send_failure_non_2xx(monkeypatch):
+    transport = _resend_transport(422, {"message": "invalid address"})
+    channel = _email_channel(monkeypatch, transport)
+    result = channel.send(qualified_lead())
+    assert result.success is False
+    assert result.detail != ""
+
+
+def test_email_channel_send_failure_exception(monkeypatch):
+    monkeypatch.setenv("RESEND_API_KEY", "re_test_key")
+    monkeypatch.setenv("OUTREACH_FROM_EMAIL", "outreach@garcar.io")
+    channel = EmailChannel()
+
+    def raise_exc(*args, **kwargs):
+        raise httpx.ConnectError("connection refused")
+
+    monkeypatch.setattr(httpx, "post", raise_exc)
+    result = channel.send(qualified_lead())
+    assert result.success is False
+    assert "connection refused" in result.detail
+
+
+def test_outreach_agent_default_channel_is_email():
+    agent = OutreachAgent()
+    assert any(c.id == "email" for c in agent.channels)
+
+
+def test_outreach_agent_skips_already_contacted(monkeypatch):
+    transport = _resend_transport(200, {"id": "msg_1"})
+    channel = _email_channel(monkeypatch, transport)
+    agent = OutreachAgent(channels=[channel])
+    lead = qualified_lead()
+
+    first = agent.contact(lead)
+    assert first is not None and first.success is True
+    second = agent.contact(lead)
+    assert second is None  # skipped
+    assert second is None  # skipped
