@@ -19,7 +19,7 @@ from src.revenue.streams.acquisition import (
     _parse_keywords,
     _parse_qualify_score,
 )
-from src.leads.outreach import EmailChannel, OutreachAgent, OutreachResult
+from src.leads.outreach import EmailChannel, OutreachAgent
 from src.revenue.stripe_client import StripeClient
 
 
@@ -617,9 +617,16 @@ async def test_acquisition_status_exposes_pipeline():
 # ---------------------------------------------------------------------------
 
 
-def _resend_transport(status: int, body: dict | None = None) -> httpx.MockTransport:
+def _resend_transport(
+    status: int,
+    body: dict | None = None,
+    *,
+    assertions=None,
+) -> httpx.MockTransport:
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.host == "api.resend.com":
+            if assertions is not None:
+                assertions(request)
             return httpx.Response(status, json=body or {})
         return httpx.Response(404, json={"error": "unexpected"})
 
@@ -673,7 +680,10 @@ def test_email_channel_rejects_non_business_email(monkeypatch):
 
 
 def test_email_channel_send_success(monkeypatch):
-    transport = _resend_transport(200, {"id": "msg_abc123"})
+    def assert_request(request: httpx.Request) -> None:
+        assert request.headers["Authorization"] == "******"
+
+    transport = _resend_transport(200, {"id": "msg_abc123"}, assertions=assert_request)
     channel = _email_channel(monkeypatch, transport)
     result = channel.send(qualified_lead())
     assert result.success is True
