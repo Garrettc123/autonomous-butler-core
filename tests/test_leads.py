@@ -613,6 +613,68 @@ async def test_acquisition_status_exposes_pipeline():
 
 
 # ---------------------------------------------------------------------------
+# Outreach integration
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_acquisition_calls_outreach_for_qualified_leads(monkeypatch):
+    """contact_all should be called with the qualified list from the pipeline."""
+    contacted: list = []
+
+    def fake_contact_all(qualified):
+        contacted.extend(qualified)
+        return [OutreachResult(lead.lead_id, "email", True, lead.email) for lead, _ in qualified]
+
+    stream = build_stream([qualified_lead()])
+    monkeypatch.setattr(stream.outreach_agent, "contact_all", fake_contact_all)
+
+    result = await stream.run()
+
+    assert len(contacted) == 1
+    assert contacted[0][0].lead_id == "github:acme"
+    assert any("Outreach sent" in a for a in result.actions)
+    event_topics = [t for t, _ in result.events]
+    assert "revenue.outreach_attempted" in event_topics
+    outreach_event = next(p for t, p in result.events if t == "revenue.outreach_attempted")
+    assert outreach_event["success"] is True
+    assert outreach_event["channel"] == "email"
+
+
+@pytest.mark.asyncio
+async def test_acquisition_outreach_deduplication_across_cycles(monkeypatch):
+    """Persistent outreach agent should not resend to the same lead twice."""
+    sent_ids: list[str] = []
+
+    def fake_contact(lead):
+        if stream.outreach_agent.already_contacted(lead.lead_id):
+            return None
+        stream.outreach_agent._delivered[lead.lead_id] = None
+        sent_ids.append(lead.lead_id)
+        return OutreachResult(lead.lead_id, "email", True, lead.email)
+
+    lead = qualified_lead()
+    pipeline = LeadPipeline(sources=[StaticSource([lead])], qualify_score=55)
+    pipeline._seen.clear()
+
+    stream = AcquisitionStream(
+        client=stripe_stub(billing_routes()),
+        pipeline=pipeline,
+        price_id="price_acq",
+    )
+    monkeypatch.setattr(stream.outreach_agent, "contact", fake_contact)
+
+    result1 = await stream.run()
+    assert sent_ids == ["github:acme"]
+    assert any("Outreach sent" in a for a in result1.actions)
+
+    pipeline._seen.clear()
+
+    result2 = await stream.run()
+
+    assert sent_ids == ["github:acme"]
+    assert not any("Outreach sent" in a for a in result2.actions)
+
 # Outreach — EmailChannel (Resend)
 # ---------------------------------------------------------------------------
 
@@ -716,6 +778,6 @@ def test_outreach_agent_skips_already_contacted(monkeypatch):
 
     first = agent.contact(lead)
     assert first is not None and first.success is True
-
     second = agent.contact(lead)
+    assert second is None  # skipped
     assert second is None  # skipped

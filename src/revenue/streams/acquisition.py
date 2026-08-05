@@ -5,6 +5,7 @@ from typing import Any
 
 from src.leads import DEFAULT_QUALIFY_SCORE, Lead, LeadPipeline
 from src.leads.enrichment import ClearbitEnricher, GitHubProfileEnricher, HunterEnricher
+from src.leads.outreach import OutreachAgent
 from src.leads.sources import GitHubLeadSource
 from src.revenue import RevenueStream, StreamResult
 from src.revenue.stripe_client import StripeClient
@@ -91,6 +92,7 @@ class AcquisitionStream(RevenueStream):
         self._customers_created = 0
         self._invoices_sent = 0
         self._billed_emails: set[str] = set()
+        self.outreach_agent = OutreachAgent()
 
     # ------------------------------------------------------------------
     # Configuration
@@ -119,6 +121,17 @@ class AcquisitionStream(RevenueStream):
 
         for lead, score in qualified:
             events.append(("revenue.lead_qualified", {**lead.to_dict(), "score": score}))
+
+        outreach_results = self.outreach_agent.contact_all(qualified)
+        for r in outreach_results:
+            if r.success:
+                actions.append(f"Outreach sent to {r.lead_id} via {r.channel}: {r.detail}")
+            events.append(("revenue.outreach_attempted", {
+                "lead_id": r.lead_id,
+                "channel": r.channel,
+                "success": r.success,
+                "detail": r.detail,
+            }))
 
         billed = 0
         if qualified and not self.billing_enabled:
