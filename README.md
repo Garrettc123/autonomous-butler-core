@@ -170,6 +170,61 @@ docker-compose up -d
 ./deploy-all.sh
 ```
 
+### Option 4: Cloudflare Workers ☁️
+
+See [Cloudflare Workers Deployment](#cloudflare-workers-deployment) below for full instructions.
+
+## ☁️ Cloudflare Workers Deployment
+
+Five edge workers (`config-bus`, `health-monitor`, `stripe-webhook`, `stripe-poller`, `lead-router`) are located in the `workers/` directory.  Each worker has its own `wrangler.toml` and exposes a `GET /health` endpoint.
+
+### Prerequisites
+- [Wrangler CLI](https://developers.cloudflare.com/workers/wrangler/) ≥ 3.x (`npm install -g wrangler`)
+- A Cloudflare account with Workers & D1 enabled
+- `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` exported in your shell
+
+### 4-Step Manual Setup
+
+**Step 1 — Authenticate**
+```bash
+wrangler login
+```
+
+**Step 2 — Provision infrastructure (D1 + KV)**
+```bash
+bash scripts/setup-cloudflare.sh
+```
+This script creates the `garcar-db` D1 database, three KV namespaces (`LEADS_KV`, `CONFIG_KV`, `SESSIONS_KV`), patches all `wrangler.toml` files with the real IDs, runs the SQL migration, and prints the 20 `wrangler secret put` commands you need to run next.
+
+**Step 3 — Set secrets**
+
+Run the `wrangler secret put` commands printed by the setup script, replacing `<VALUE>` with real values:
+```bash
+cd workers/stripe-webhook
+wrangler secret put STRIPE_SECRET_KEY
+wrangler secret put STRIPE_WEBHOOK_SECRET
+cd ../..
+# repeat for remaining workers as shown by the script
+```
+
+**Step 4 — Deploy**
+```bash
+# Deploy all workers (config-bus first, then health-monitor, then rest in parallel)
+# This is handled automatically by CI. To deploy manually:
+for worker in config-bus health-monitor stripe-webhook stripe-poller lead-router; do
+  (cd workers/$worker && wrangler deploy)
+done
+```
+
+### CI/CD
+
+Pushing to `main` (with changes under `workers/`) triggers `.github/workflows/workers-deploy.yml`, which deploys workers in dependency order using `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repository secrets.
+
+### Further Reading
+- [Wrangler CLI docs](https://developers.cloudflare.com/workers/wrangler/)
+- [D1 Database docs](https://developers.cloudflare.com/d1/)
+- [KV Namespace docs](https://developers.cloudflare.com/kv/)
+
 ## 🔗 Related Projects
 
 - [autonomous-event-mesh](https://github.com/Garrettc123/autonomous-event-mesh) - Event streaming
