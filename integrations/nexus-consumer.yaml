@@ -1,0 +1,76 @@
+# BUTLER CORE — NEXUS EVENT CONSUMER CONFIG
+# Consumes events dispatched from NEXUS-AI-CORE
+# Version: 1.0.0 | 2026-08-30
+
+consumer:
+  source: Garrettc123/NEXUS-AI-CORE
+  trigger: repository_dispatch
+  event_type: nexus-event
+
+routing:
+  payment.succeeded:
+    agent: revenue_ops_agent
+    priority: critical
+    actions:
+      - record_to_supabase
+      - notify_slack
+      - update_notion_revenue_tracker
+      - trigger_next_campaign
+
+  payment.failed:
+    agent: alert_agent
+    priority: high
+    actions:
+      - notify_slack_urgent
+      - retry_payment
+      - create_linear_issue
+
+  deal.closed_won:
+    agent: onboarding_agent
+    priority: high
+    actions:
+      - send_welcome_sequence
+      - provision_access
+      - update_notion_deal_pipeline
+      - create_linear_onboarding_task
+
+  lead.qualified:
+    agent: outreach_agent
+    priority: medium
+    actions:
+      - enrich_via_huggingface
+      - send_outreach_sequence
+      - update_supabase_leads
+
+  agent.health.degraded:
+    agent: self_heal_agent
+    priority: critical
+    actions:
+      - diagnose_agent
+      - attempt_restart
+      - escalate_to_slack
+      - create_linear_p1_issue
+
+  deploy.failed:
+    agent: devops_agent
+    priority: critical
+    actions:
+      - rollback_deployment
+      - notify_slack
+      - create_linear_incident
+
+platforms:
+  supabase:
+    url_env: SUPABASE_URL
+    key_env: SUPABASE_SERVICE_KEY
+  slack:
+    webhook_env: SLACK_WEBHOOK_URL
+    channel: D0AN3SHHD50
+  notion:
+    token_env: NOTION_API_KEY
+  linear:
+    token_env: LINEAR_API_KEY
+    team: GAR
+  huggingface:
+    token_env: HF_TOKEN
+    model: sentence-transformers/all-MiniLM-L6-v2

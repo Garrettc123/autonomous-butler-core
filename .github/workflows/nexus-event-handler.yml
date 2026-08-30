@@ -1,0 +1,58 @@
+name: 🤖 Butler Core — NEXUS Event Handler
+
+on:
+  repository_dispatch:
+    types: [nexus-event]
+
+jobs:
+  route-event:
+    name: Route NEXUS Event to Agent
+    runs-on: ubuntu-latest
+    steps:
+      - name: Log incoming event
+        run: |
+          echo "EVENT: ${{ github.event.client_payload.event_type }}"
+          echo "SOURCE: ${{ github.event.client_payload.source }}"
+          echo "TIMESTAMP: ${{ github.event.client_payload.timestamp }}"
+
+      - name: Revenue Ops — payment.succeeded
+        if: github.event.client_payload.event_type == 'payment.succeeded'
+        run: |
+          echo "Routing to Revenue Ops Agent"
+          # Record to Supabase
+          curl -s -X POST "${{ secrets.SUPABASE_URL }}/rest/v1/revenue_events" \
+            -H "apikey: ${{ secrets.SUPABASE_SERVICE_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"event_type\": \"payment.succeeded\", \"amount\": \"${{ github.event.client_payload.amount }}\", \"source\": \"nexus\", \"created_at\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}"
+          # Notify Slack
+          curl -s -X POST -H 'Content-type: application/json' \
+            --data "{\"text\": \"💰 *REVENUE EVENT* payment.succeeded | Amount: ${{ github.event.client_payload.amount }} | $(date -u)\"}" \
+            ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Alert Agent — payment.failed
+        if: github.event.client_payload.event_type == 'payment.failed'
+        run: |
+          echo "Routing to Alert Agent"
+          curl -s -X POST https://api.linear.app/graphql \
+            -H "Authorization: ${{ secrets.LINEAR_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d '{"query": "mutation { issueCreate(input: { title: \"[BUTLER] payment.failed detected\", teamId: \"GAR\", priority: 1, labelIds: [] }) { success issue { identifier } } }"}'
+
+      - name: Onboarding Agent — deal.closed_won
+        if: github.event.client_payload.event_type == 'deal.closed_won'
+        run: |
+          echo "Routing to Onboarding Agent"
+          curl -s -X POST "${{ secrets.SUPABASE_URL }}/rest/v1/deals" \
+            -H "apikey: ${{ secrets.SUPABASE_SERVICE_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"status\": \"closed_won\", \"source\": \"nexus\", \"created_at\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}"
+
+      - name: Self-Heal Agent — agent.health.degraded
+        if: github.event.client_payload.event_type == 'agent.health.degraded'
+        run: |
+          echo "CRITICAL: Agent health degraded. Initiating self-heal sequence."
+          curl -s -X POST -H 'Content-type: application/json' \
+            --data "{\"text\": \"🚨 *CRITICAL* agent.health.degraded detected. Self-heal sequence initiated. $(date -u)\"}" \
+            ${{ secrets.SLACK_WEBHOOK_URL }}
