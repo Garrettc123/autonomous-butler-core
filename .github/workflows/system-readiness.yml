@@ -1,0 +1,96 @@
+name: System Readiness (Unprecedented Fabric)
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'vault/**'
+      - 'k8s/**'
+      - 'waypoint/**'
+      - 'ACTIVATE.md'
+      - '.github/workflows/**'
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  VAULT_ADDR: ${{ secrets.VAULT_ADDR }}
+
+jobs:
+  readiness:
+    name: Full-stack readiness check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check required repo files
+        run: |
+          set -e
+          required=(
+            ACTIVATE.md
+            vault/automater/automate-all.sh
+            vault/automater/bootstrap.sh
+            vault/automater/templates/all-platforms.ctmpl
+            vault/automater/k8s/install-injector.sh
+            vault/automater/k8s/configure-k8s-auth.sh
+            k8s/deployment.yaml
+            k8s/serviceaccount.yaml
+            k8s/vault-injector-patch.yaml
+            waypoint/SETUP.md
+            .github/workflows/ci-cd.yml
+            .github/workflows/secrets-validation.yml
+            .github/workflows/integration_health.yml
+          )
+          for f in "${required[@]}"; do
+            if [ ! -f "$f" ]; then
+              echo "❌ Missing: $f"
+              exit 1
+            fi
+            echo "✅ $f"
+          done
+
+      - name: Check VAULT_ADDR present
+        id: vault
+        run: |
+          if [ -z "${{ env.VAULT_ADDR }}" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::VAULT_ADDR not set — add it to complete activation"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+            echo "✅ VAULT_ADDR is set"
+          fi
+
+      - name: Probe Vault (if configured)
+        if: steps.vault.outputs.configured == 'true'
+        uses: hashicorp/vault-action@v3.0.0
+        with:
+          url: ${{ env.VAULT_ADDR }}
+          method: jwt
+          role: garcar-github-actions
+          secrets: |
+            secret/data/garcar/ai ANTHROPIC_API_KEY ;
+            secret/data/garcar/stripe STRIPE_SECRET_KEY ;
+            secret/data/garcar/github GITHUB_TOKEN ;
+
+      - name: Critical secrets present
+        if: steps.vault.outputs.configured == 'true'
+        run: |
+          set -e
+          for var in ANTHROPIC_API_KEY STRIPE_SECRET_KEY GITHUB_TOKEN; do
+            if [ -z "${!var}" ]; then
+              echo "❌ $var missing from Vault"
+              exit 1
+            fi
+            echo "✅ $var present"
+          done
+
+      - name: Readiness summary
+        run: |
+          echo "========================================"
+          echo " GARCAR UNPRECEDENTED SYSTEM READINESS"
+          echo "========================================"
+          echo "Repo fabric:     complete"
+          echo "VAULT_ADDR:      ${{ steps.vault.outputs.configured }}"
+          echo "Next: follow ACTIVATE.md on your machine/cluster"
+          echo "========================================"
