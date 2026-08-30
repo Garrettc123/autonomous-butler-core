@@ -1,0 +1,30 @@
+# Vault-aware override
+# Usage: docker compose -f docker-compose.yml -f docker-compose.override.yml up
+
+services:
+  butler-core:
+    environment:
+      # Vault Agent will inject secrets into these env vars at runtime
+      VAULT_ADDR: ${VAULT_ADDR}
+      VAULT_ROLE_ID: ${VAULT_ROLE_ID}
+      VAULT_SECRET_ID: ${VAULT_SECRET_ID}
+    volumes:
+      - ./vault/agent.hcl:/vault/config/agent.hcl:ro
+      - vault-token:/vault/token
+    depends_on:
+      - vault-agent
+
+  vault-agent:
+    image: hashicorp/vault:1.17
+    command: agent -config=/vault/config/agent.hcl
+    environment:
+      VAULT_ADDR: ${VAULT_ADDR}
+      VAULT_ROLE_ID: ${VAULT_ROLE_ID}
+      VAULT_SECRET_ID: ${VAULT_SECRET_ID}
+    volumes:
+      - ./vault/agent.hcl:/vault/config/agent.hcl:ro
+      - vault-token:/vault/token
+    restart: unless-stopped
+
+volumes:
+  vault-token:
