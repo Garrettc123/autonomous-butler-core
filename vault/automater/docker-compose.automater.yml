@@ -1,0 +1,38 @@
+# Unprecedented Automater — Docker Compose override
+# Usage:
+#   docker compose -f docker-compose.yml -f vault/automater/docker-compose.automater.yml up -d
+
+services:
+  vault-agent:
+    image: hashicorp/vault:1.17
+    container_name: garcar-vault-agent
+    command: agent -config=/vault/config/agent.hcl -log-level=info
+    environment:
+      VAULT_ADDR: ${VAULT_ADDR}
+    volumes:
+      - ./vault/automater/agent.hcl:/vault/config/agent.hcl:ro
+      - ./vault/automater/templates:/vault/config/templates:ro
+      - ./vault/automater/role-id:/vault/config/role-id:ro
+      - ./vault/automater/secret-id:/vault/config/secret-id:ro
+      - vault-secrets:/vault/secrets
+      - vault-token:/vault/token
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "vault", "token", "lookup"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  butler-core:
+    depends_on:
+      vault-agent:
+        condition: service_healthy
+    volumes:
+      - vault-secrets:/vault/secrets:ro
+    environment:
+      # Application sources /vault/secrets/.env at startup or via dotenv
+      DOTENV_PATH: /vault/secrets/.env
+
+volumes:
+  vault-secrets:
+  vault-token:

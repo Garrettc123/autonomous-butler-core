@@ -1,0 +1,191 @@
+{{/* Unprecedented Automater — single template that materializes every platform */}}
+
+{{/* AI */}}
+{{- with secret "secret/data/garcar/ai" -}}
+ANTHROPIC_API_KEY={{ .Data.data.ANTHROPIC_API_KEY }}
+OPENAI_API_KEY={{ .Data.data.OPENAI_API_KEY }}
+HUGGINGFACE_API_TOKEN={{ .Data.data.HUGGINGFACE_API_TOKEN }}
+HF_LEAD_SCORER_MODEL={{ .Data.data.HF_LEAD_SCORER_MODEL }}
+HF_DEAL_CLASSIFIER_MODEL={{ .Data.data.HF_DEAL_CLASSIFIER_MODEL }}
+HF_INFERENCE_ENDPOINT={{ .Data.data.HF_INFERENCE_ENDPOINT }}
+{{- end }}
+
+{{/* GitHub */}}
+{{- with secret "secret/data/garcar/github" -}}
+GITHUB_TOKEN={{ .Data.data.GITHUB_TOKEN }}
+GITHUB_USERNAME={{ .Data.data.GITHUB_USERNAME }}
+GITHUB_ORG={{ .Data.data.GITHUB_ORG }}
+GITHUB_WEBHOOK_SECRET={{ .Data.data.GITHUB_WEBHOOK_SECRET }}
+{{- end }}
+
+{{/* Slack */}}
+{{- with secret "secret/data/garcar/slack" -}}
+SLACK_BOT_TOKEN={{ .Data.data.SLACK_BOT_TOKEN }}
+SLACK_APP_TOKEN={{ .Data.data.SLACK_APP_TOKEN }}
+SLACK_SIGNING_SECRET={{ .Data.data.SLACK_SIGNING_SECRET }}
+SLACK_WEBHOOK_URL={{ .Data.data.SLACK_WEBHOOK_URL }}
+SLACK_CHANNEL_REVENUE={{ .Data.data.SLACK_CHANNEL_REVENUE }}
+SLACK_CHANNEL_OPS={{ .Data.data.SLACK_CHANNEL_OPS }}
+SLACK_CHANNEL_ALERTS={{ .Data.data.SLACK_CHANNEL_ALERTS }}
+SLACK_CHANNEL_AI={{ .Data.data.SLACK_CHANNEL_AI }}
+{{- end }}
+
+{{/* Base / Coinbase */}}
+{{- with secret "secret/data/garcar/base" -}}
+COINBASE_CDP_API_KEY={{ .Data.data.COINBASE_CDP_API_KEY }}
+COINBASE_CDP_API_SECRET={{ .Data.data.COINBASE_CDP_API_SECRET }}
+GARCAR_WALLET_ADDRESS={{ .Data.data.GARCAR_WALLET_ADDRESS }}
+BASE_RPC_URL={{ .Data.data.BASE_RPC_URL }}
+BASE_CHAIN_ID={{ .Data.data.BASE_CHAIN_ID }}
+USDC_BASE_CONTRACT={{ .Data.data.USDC_BASE_CONTRACT }}
+{{- end }}
+
+{{/* Shopify */}}
+{{- with secret "secret/data/garcar/shopify" -}}
+SHOPIFY_STORE_URL={{ .Data.data.SHOPIFY_STORE_URL }}
+SHOPIFY_ADMIN_API_KEY={{ .Data.data.SHOPIFY_ADMIN_API_KEY }}
+SHOPIFY_ADMIN_API_SECRET={{ .Data.data.SHOPIFY_ADMIN_API_SECRET }}
+SHOPIFY_STOREFRONT_TOKEN={{ .Data.data.SHOPIFY_STOREFRONT_TOKEN }}
+SHOPIFY_WEBHOOK_SECRET={{ .Data.data.SHOPIFY_WEBHOOK_SECRET }}
+SHOPIFY_API_VERSION={{ .Data.data.SHOPIFY_API_VERSION }}
+{{- end }}
+
+{{/* Notion */}}
+{{- with secret "secret/data/garcar/notion" -}}
+NOTION_API_KEY={{ .Data.data.NOTION_API_KEY }}
+NOTION_WORKSPACE_ID={{ .Data.data.NOTION_WORKSPACE_ID }}
+NOTION_REVENUE_DB_ID={{ .Data.data.NOTION_REVENUE_DB_ID }}
+NOTION_OPS_DB_ID={{ .Data.data.NOTION_OPS_DB_ID }}
+NOTION_PROJECTS_DB_ID={{ .Data.data.NOTION_PROJECTS_DB_ID }}
+NOTION_DECISIONS_DB_ID={{ .Data.data.NOTION_DECISIONS_DB_ID }}
+{{- end }}
+
+{{/* Linear */}}
+{{- with secret "secret/data/garcar/linear" -}}
+LINEAR_API_KEY={{ .Data.data.LINEAR_API_KEY }}
+LINEAR_TEAM_ID={{ .Data.data.LINEAR_TEAM_ID }}
+LINEAR_PROJECT_REVENUE_ID={{ .Data.data.LINEAR_PROJECT_REVENUE_ID }}
+LINEAR_PROJECT_INFRA_ID={{ .Data.data.LINEAR_PROJECT_INFRA_ID }}
+LINEAR_TEAM_DEVOPS_ID={{ .Data.data.LINEAR_TEAM_DEVOPS_ID }}
+LINEAR_TEAM_REVENUE_ID={{ .Data.data.LINEAR_TEAM_REVENUE_ID }}
+LINEAR_TEAM_SECURITY_ID={{ .Data.data.LINEAR_TEAM_SECURITY_ID }}
+LINEAR_WEBHOOK_SECRET={{ .Data.data.LINEAR_WEBHOOK_SECRET }}
+{{- end }}
+
+{{/* Supabase */}}
+{{- with secret "secret/data/garcar/supabase" -}}
+SUPABASE_URL={{ .Data.data.SUPABASE_URL }}
+SUPABASE_KEY={{ .Data.data.SUPABASE_KEY }}
+SUPABASE_SERVICE_ROLE_KEY={{ .Data.data.SUPABASE_SERVICE_ROLE_KEY }}
+SUPABASE_ANON_KEY={{ .Data.data.SUPABASE_ANON_KEY }}
+SUPABASE_JWT_SECRET={{ .Data.data.SUPABASE_JWT_SECRET }}
+{{- end }}
+
+{{/* Wix */}}
+{{- with secret "secret/data/garcar/wix" -}}
+WIX_API_KEY={{ .Data.data.WIX_API_KEY }}
+WIX_ACCOUNT_ID={{ .Data.data.WIX_ACCOUNT_ID }}
+WIX_SITE_ID={{ .Data.data.WIX_SITE_ID }}
+WIX_OAUTH_APP_ID={{ .Data.data.WIX_OAUTH_APP_ID }}
+WIX_OAUTH_APP_SECRET={{ .Data.data.WIX_OAUTH_APP_SECRET }}
+{{- end }}
+
+{{/* HubSpot */}}
+{{- with secret "secret/data/garcar/hubspot" -}}
+HUBSPOT_PRIVATE_APP_TOKEN={{ .Data.data.HUBSPOT_PRIVATE_APP_TOKEN }}
+HUBSPOT_PORTAL_ID={{ .Data.data.HUBSPOT_PORTAL_ID }}
+HUBSPOT_PIPELINE_ID={{ .Data.data.HUBSPOT_PIPELINE_ID }}
+HUBSPOT_STAGE_QUALIFIED={{ .Data.data.HUBSPOT_STAGE_QUALIFIED }}
+HUBSPOT_STAGE_CLOSED_WON={{ .Data.data.HUBSPOT_STAGE_CLOSED_WON }}
+HUBSPOT_WEBHOOK_SECRET={{ .Data.data.HUBSPOT_WEBHOOK_SECRET }}
+{{- end }}
+
+{{/* Apollo */}}
+{{- with secret "secret/data/garcar/apollo" -}}
+APOLLO_API_KEY={{ .Data.data.APOLLO_API_KEY }}
+APOLLO_ORG_ID={{ .Data.data.APOLLO_ORG_ID }}
+APOLLO_SEQUENCE_OUTBOUND_ID={{ .Data.data.APOLLO_SEQUENCE_OUTBOUND_ID }}
+APOLLO_SEQUENCE_NURTURE_ID={{ .Data.data.APOLLO_SEQUENCE_NURTURE_ID }}
+{{- end }}
+
+{{/* DocuSign */}}
+{{- with secret "secret/data/garcar/docusign" -}}
+DOCUSIGN_INTEGRATION_KEY={{ .Data.data.DOCUSIGN_INTEGRATION_KEY }}
+DOCUSIGN_SECRET_KEY={{ .Data.data.DOCUSIGN_SECRET_KEY }}
+DOCUSIGN_ACCOUNT_ID={{ .Data.data.DOCUSIGN_ACCOUNT_ID }}
+DOCUSIGN_BASE_URL={{ .Data.data.DOCUSIGN_BASE_URL }}
+DOCUSIGN_OAUTH_BASE_URL={{ .Data.data.DOCUSIGN_OAUTH_BASE_URL }}
+DOCUSIGN_REDIRECT_URI={{ .Data.data.DOCUSIGN_REDIRECT_URI }}
+DOCUSIGN_RSA_PRIVATE_KEY={{ .Data.data.DOCUSIGN_RSA_PRIVATE_KEY }}
+DOCUSIGN_CONTRACT_TEMPLATE_ID={{ .Data.data.DOCUSIGN_CONTRACT_TEMPLATE_ID }}
+DOCUSIGN_NDA_TEMPLATE_ID={{ .Data.data.DOCUSIGN_NDA_TEMPLATE_ID }}
+{{- end }}
+
+{{/* Google */}}
+{{- with secret "secret/data/garcar/google" -}}
+GOOGLE_CLIENT_ID={{ .Data.data.GOOGLE_CLIENT_ID }}
+GOOGLE_CLIENT_SECRET={{ .Data.data.GOOGLE_CLIENT_SECRET }}
+GOOGLE_REDIRECT_URI={{ .Data.data.GOOGLE_REDIRECT_URI }}
+GOOGLE_REFRESH_TOKEN={{ .Data.data.GOOGLE_REFRESH_TOKEN }}
+GOOGLE_TASKS_TASKLIST_ID={{ .Data.data.GOOGLE_TASKS_TASKLIST_ID }}
+GOOGLE_SERVICE_ACCOUNT_JSON={{ .Data.data.GOOGLE_SERVICE_ACCOUNT_JSON }}
+{{- end }}
+
+{{/* ClickUp */}}
+{{- with secret "secret/data/garcar/clickup" -}}
+CLICKUP_API_TOKEN={{ .Data.data.CLICKUP_API_TOKEN }}
+CLICKUP_WORKSPACE_ID={{ .Data.data.CLICKUP_WORKSPACE_ID }}
+CLICKUP_SPACE_ID={{ .Data.data.CLICKUP_SPACE_ID }}
+CLICKUP_LIST_REVENUE_ID={{ .Data.data.CLICKUP_LIST_REVENUE_ID }}
+CLICKUP_LIST_DEVOPS_ID={{ .Data.data.CLICKUP_LIST_DEVOPS_ID }}
+CLICKUP_WEBHOOK_SECRET={{ .Data.data.CLICKUP_WEBHOOK_SECRET }}
+{{- end }}
+
+{{/* Asana */}}
+{{- with secret "secret/data/garcar/asana" -}}
+ASANA_PERSONAL_ACCESS_TOKEN={{ .Data.data.ASANA_PERSONAL_ACCESS_TOKEN }}
+ASANA_WORKSPACE_ID={{ .Data.data.ASANA_WORKSPACE_ID }}
+ASANA_PROJECT_REVENUE_GID={{ .Data.data.ASANA_PROJECT_REVENUE_GID }}
+ASANA_PROJECT_INFRA_GID={{ .Data.data.ASANA_PROJECT_INFRA_GID }}
+ASANA_TEAM_GID={{ .Data.data.ASANA_TEAM_GID }}
+ASANA_WEBHOOK_SECRET={{ .Data.data.ASANA_WEBHOOK_SECRET }}
+{{- end }}
+
+{{/* Stripe */}}
+{{- with secret "secret/data/garcar/stripe" -}}
+STRIPE_SECRET_KEY={{ .Data.data.STRIPE_SECRET_KEY }}
+STRIPE_WEBHOOK_SECRET={{ .Data.data.STRIPE_WEBHOOK_SECRET }}
+STRIPE_USAGE_PRICE_ID={{ .Data.data.STRIPE_USAGE_PRICE_ID }}
+STRIPE_ACQUISITION_PRICE_ID={{ .Data.data.STRIPE_ACQUISITION_PRICE_ID }}
+STRIPE_PRICE_STARTER={{ .Data.data.STRIPE_PRICE_STARTER }}
+STRIPE_PRICE_GROWTH={{ .Data.data.STRIPE_PRICE_GROWTH }}
+STRIPE_PRICE_ENTERPRISE={{ .Data.data.STRIPE_PRICE_ENTERPRISE }}
+{{- end }}
+
+{{/* Enrichment */}}
+{{- with secret "secret/data/garcar/enrichment" -}}
+CLEARBIT_API_KEY={{ .Data.data.CLEARBIT_API_KEY }}
+HUNTER_API_KEY={{ .Data.data.HUNTER_API_KEY }}
+ICP_KEYWORDS={{ .Data.data.ICP_KEYWORDS }}
+LEAD_QUALIFY_SCORE={{ .Data.data.LEAD_QUALIFY_SCORE }}
+{{- end }}
+
+{{/* Infra */}}
+{{- with secret "secret/data/garcar/infra" -}}
+KUBERNETES_CONFIG_PATH={{ .Data.data.KUBERNETES_CONFIG_PATH }}
+KUBERNETES_CONTEXT={{ .Data.data.KUBERNETES_CONTEXT }}
+AWS_ACCESS_KEY_ID={{ .Data.data.AWS_ACCESS_KEY_ID }}
+AWS_SECRET_ACCESS_KEY={{ .Data.data.AWS_SECRET_ACCESS_KEY }}
+AWS_REGION={{ .Data.data.AWS_REGION }}
+KAFKA_BROKERS={{ .Data.data.KAFKA_BROKERS }}
+KAFKA_CONSUMER_GROUP={{ .Data.data.KAFKA_CONSUMER_GROUP }}
+REDIS_URL={{ .Data.data.REDIS_URL }}
+POSTGRES_URL={{ .Data.data.POSTGRES_URL }}
+PROMETHEUS_URL={{ .Data.data.PROMETHEUS_URL }}
+PAGERDUTY_API_KEY={{ .Data.data.PAGERDUTY_API_KEY }}
+ENVIRONMENT={{ .Data.data.ENVIRONMENT }}
+LOG_LEVEL={{ .Data.data.LOG_LEVEL }}
+AUTO_DEPLOY_ENABLED={{ .Data.data.AUTO_DEPLOY_ENABLED }}
+AUTO_HEAL_ENABLED={{ .Data.data.AUTO_HEAL_ENABLED }}
+AUTO_SCALE_ENABLED={{ .Data.data.AUTO_SCALE_ENABLED }}
+{{- end }}

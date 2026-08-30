@@ -1,0 +1,34 @@
+# Unprecedented Automater — ready-to-apply Kubernetes annotations
+# Patch any Deployment/StatefulSet with:
+#   kubectl patch deployment butler-core --patch-file vault/automater/k8s/annotations.yaml
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: butler-core
+spec:
+  template:
+    metadata:
+      annotations:
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/role: "garcar-runtime"
+        vault.hashicorp.com/agent-inject-secret-env: "secret/data/garcar/ai"
+        vault.hashicorp.com/agent-inject-file-env: ".env"
+        vault.hashicorp.com/agent-inject-template-env: |
+          {{- with secret "secret/data/garcar/ai" -}}
+          ANTHROPIC_API_KEY={{ .Data.data.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY={{ .Data.data.OPENAI_API_KEY }}
+          HUGGINGFACE_API_TOKEN={{ .Data.data.HUGGINGFACE_API_TOKEN }}
+          {{- end }}
+          {{- with secret "secret/data/garcar/github" -}}
+          GITHUB_TOKEN={{ .Data.data.GITHUB_TOKEN }}
+          {{- end }}
+          {{- with secret "secret/data/garcar/slack" -}}
+          SLACK_BOT_TOKEN={{ .Data.data.SLACK_BOT_TOKEN }}
+          {{- end }}
+          {{- with secret "secret/data/garcar/stripe" -}}
+          STRIPE_SECRET_KEY={{ .Data.data.STRIPE_SECRET_KEY }}
+          {{- end }}
+          # Extend with remaining platforms as needed
+        vault.hashicorp.com/agent-pre-populate: "true"
+        vault.hashicorp.com/agent-inject-status: "update"
