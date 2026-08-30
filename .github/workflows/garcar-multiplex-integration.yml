@@ -1,0 +1,251 @@
+name: Garcar Multiplex — Full Platform Integration
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    # Run every 30 minutes for autonomous revenue loop
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Integration mode'
+        required: false
+        default: 'full'
+        type: choice
+        options:
+          - full
+          - revenue-only
+          - sync-only
+          - health-check
+
+env:
+  # ── GitHub ──────────────────────────────────────────────────────────────────
+  GITHUB_TOKEN: ${{ secrets.GARCAR_GITHUB_TOKEN }}
+  GITHUB_ORG: Garrettc123
+
+  # ── Slack ───────────────────────────────────────────────────────────────────
+  SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+  SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+  SLACK_CHANNEL_REVENUE: ${{ secrets.SLACK_CHANNEL_REVENUE }}
+  SLACK_CHANNEL_OPS: ${{ secrets.SLACK_CHANNEL_OPS }}
+  SLACK_CHANNEL_ALERTS: ${{ secrets.SLACK_CHANNEL_ALERTS }}
+
+  # ── Base by Coinbase (Base L2 / CDP) ────────────────────────────────────────
+  COINBASE_CDP_API_KEY_NAME: ${{ secrets.COINBASE_CDP_API_KEY_NAME }}
+  COINBASE_CDP_PRIVATE_KEY: ${{ secrets.COINBASE_CDP_PRIVATE_KEY }}
+  BASE_NETWORK_RPC_URL: ${{ secrets.BASE_NETWORK_RPC_URL }}
+  BASE_WALLET_ADDRESS: ${{ secrets.BASE_WALLET_ADDRESS }}
+  COINBASE_COMMERCE_API_KEY: ${{ secrets.COINBASE_COMMERCE_API_KEY }}
+
+  # ── Shopify ──────────────────────────────────────────────────────────────────
+  SHOPIFY_STORE_DOMAIN: ${{ secrets.SHOPIFY_STORE_DOMAIN }}
+  SHOPIFY_ADMIN_API_TOKEN: ${{ secrets.SHOPIFY_ADMIN_API_TOKEN }}
+  SHOPIFY_STOREFRONT_TOKEN: ${{ secrets.SHOPIFY_STOREFRONT_TOKEN }}
+  SHOPIFY_WEBHOOK_SECRET: ${{ secrets.SHOPIFY_WEBHOOK_SECRET }}
+
+  # ── Notion ───────────────────────────────────────────────────────────────────
+  NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
+  NOTION_REVENUE_DB_ID: ${{ secrets.NOTION_REVENUE_DB_ID }}
+  NOTION_OPS_DB_ID: ${{ secrets.NOTION_OPS_DB_ID }}
+  NOTION_LEADS_DB_ID: ${{ secrets.NOTION_LEADS_DB_ID }}
+
+  # ── Linear ───────────────────────────────────────────────────────────────────
+  LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+  LINEAR_TEAM_ID: ${{ secrets.LINEAR_TEAM_ID }}
+  LINEAR_PROJECT_ID: ${{ secrets.LINEAR_PROJECT_ID }}
+  LINEAR_WEBHOOK_SECRET: ${{ secrets.LINEAR_WEBHOOK_SECRET }}
+
+  # ── Supabase ─────────────────────────────────────────────────────────────────
+  SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+  SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+  SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+  SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+
+  # ── Hugging Face ─────────────────────────────────────────────────────────────
+  HUGGINGFACE_TOKEN: ${{ secrets.HUGGINGFACE_TOKEN }}
+  HUGGINGFACE_SPACE_ID: ${{ secrets.HUGGINGFACE_SPACE_ID }}
+  HUGGINGFACE_MODEL_REPO: ${{ secrets.HUGGINGFACE_MODEL_REPO }}
+
+  # ── Stripe (Revenue Core) ────────────────────────────────────────────────────
+  STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+  STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+  STRIPE_PUBLISHABLE_KEY: ${{ secrets.STRIPE_PUBLISHABLE_KEY }}
+
+  # ── OpenAI / AI Core ─────────────────────────────────────────────────────────
+  OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+  ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+jobs:
+  # ════════════════════════════════════════════════════════════════════════════
+  # JOB 1 — Health Check: Verify all integrations are reachable
+  # ════════════════════════════════════════════════════════════════════════════
+  health-check:
+    name: Platform Health Check
+    runs-on: ubuntu-latest
+    outputs:
+      all_healthy: ${{ steps.check.outputs.all_healthy }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install httpx supabase python-linear-client notion-client shopify huggingface_hub slack_sdk stripe coinbase-advanced-py
+
+      - name: Run platform health checks
+        id: check
+        run: |
+          python integrations/health_check.py
+        env:
+          ALL_SECRETS_AVAILABLE: "true"
+
+      - name: Notify Slack — Health Status
+        if: always()
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          channel-id: ${{ secrets.SLACK_CHANNEL_OPS }}
+          payload: |
+            {
+              "text": "*Garcar Multiplex Health Check* — ${{ job.status == 'success' && '✅ All systems operational' || '⚠️ Degraded — check logs' }}",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*🔍 Multiplex Health Check* | `${{ github.sha }}` | ${{ job.status == 'success' && '✅ All 8 platforms healthy' || '🚨 One or more platforms degraded' }}"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # JOB 2 — Sync: Push data between platforms
+  # ════════════════════════════════════════════════════════════════════════════
+  platform-sync:
+    name: Cross-Platform Sync
+    runs-on: ubuntu-latest
+    needs: health-check
+    if: github.event.inputs.mode != 'health-check'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install httpx supabase notion-client shopify huggingface_hub slack_sdk stripe linear-api coinbase-advanced-py
+
+      - name: Run full integration bridge
+        run: python integrations/garcar_integration_bridge.py
+        env:
+          INTEGRATION_MODE: ${{ github.event.inputs.mode || 'full' }}
+
+      - name: Sync Shopify orders → Supabase ledger
+        run: python integrations/shopify_to_supabase.py
+
+      - name: Sync revenue events → Notion dashboard
+        run: python integrations/revenue_to_notion.py
+
+      - name: Push Linear tasks from Supabase queue
+        run: python integrations/supabase_to_linear.py
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # JOB 3 — Revenue Loop: Stripe + Base/Coinbase + Shopify
+  # ════════════════════════════════════════════════════════════════════════════
+  revenue-loop:
+    name: Autonomous Revenue Loop
+    runs-on: ubuntu-latest
+    needs: health-check
+    if: github.event.inputs.mode == 'full' || github.event.inputs.mode == 'revenue-only' || github.event_name == 'schedule'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install stripe coinbase-advanced-py httpx supabase slack_sdk
+
+      - name: Run revenue confirmation loop
+        run: python integrations/revenue_loop.py
+
+      - name: Notify Slack — Revenue Update
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          channel-id: ${{ secrets.SLACK_CHANNEL_REVENUE }}
+          payload: |
+            {
+              "text": "💰 *Revenue Loop Completed* — ${{ github.run_id }}"
+            }
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # JOB 4 — AI Model Sync: Hugging Face model registry
+  # ════════════════════════════════════════════════════════════════════════════
+  hf-model-sync:
+    name: Hugging Face Model Registry Sync
+    runs-on: ubuntu-latest
+    needs: platform-sync
+    if: github.event.inputs.mode == 'full' || github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Sync model registry to Supabase
+        run: |
+          pip install huggingface_hub supabase
+          python integrations/hf_model_sync.py
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # JOB 5 — Final Report: Post summary to Slack
+  # ════════════════════════════════════════════════════════════════════════════
+  integration-report:
+    name: Integration Report → Slack
+    runs-on: ubuntu-latest
+    needs: [platform-sync, revenue-loop, hf-model-sync]
+    if: always()
+    steps:
+      - name: Post integration summary
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          channel-id: ${{ secrets.SLACK_CHANNEL_OPS }}
+          payload: |
+            {
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": { "type": "plain_text", "text": "🧠 Garcar Multiplex Integration Report" }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    { "type": "mrkdwn", "text": "*Sync:* ${{ needs.platform-sync.result }}" },
+                    { "type": "mrkdwn", "text": "*Revenue Loop:* ${{ needs.revenue-loop.result }}" },
+                    { "type": "mrkdwn", "text": "*HF Sync:* ${{ needs.hf-model-sync.result }}" },
+                    { "type": "mrkdwn", "text": "*Run:* <https://github.com/Garrettc123/autonomous-butler-core/actions/runs/${{ github.run_id }}|View Logs>" }
+                  ]
+                }
+              ]
+            }
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
