@@ -24,6 +24,7 @@ from src.agents.pm_agent import PMAgent
 from src.agents.revenue_agent import RevenueAgent
 from src.agents.security_agent import SecurityAgent
 from src.agents.support_agent import SupportAgent
+from src.billing_router import router as billing_router
 from src.bus import Event, bus
 from src.revenue.stripe_client import verify_webhook_signature
 
@@ -78,6 +79,8 @@ app = FastAPI(
     version=VERSION,
     lifespan=lifespan,
 )
+
+app.include_router(billing_router)
 
 
 # ---------------------------------------------------------------------------
