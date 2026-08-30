@@ -225,6 +225,64 @@ Pushing to `main` (with changes under `workers/`) triggers `.github/workflows/wo
 - [D1 Database docs](https://developers.cloudflare.com/d1/)
 - [KV Namespace docs](https://developers.cloudflare.com/kv/)
 
+## 💳 Pricing & SaaS Billing
+
+Autonomous Butler is offered as a fully managed SaaS on three subscription tiers:
+
+| Tier | Price | Highlights |
+|------|-------|------------|
+| **Starter** | $2,500 / mo | All 6 agents, 24/7 uptime, audit ledger |
+| **Growth** | $5,000 / mo | Dedicated infra, 99.9 % SLA, priority support |
+| **Enterprise** | $10,000 / mo | Private VPC, 99.99 % SLA, custom agents, SOC-2 |
+
+### SaaS Deployment Quickstart
+
+> Requires Stripe and Supabase accounts. All billing events are signed and
+> verified before processing.
+
+**1. Apply the Supabase schema**
+
+```bash
+psql "$SUPABASE_DB_URL" -f supabase/billing_schema.sql
+```
+
+**2. Set environment variables**
+
+```bash
+cp .env.example .env
+# Fill in STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET,
+# STRIPE_PRICE_STARTER / GROWTH / ENTERPRISE,
+# SUPABASE_URL, SUPABASE_KEY
+```
+
+**3. Run the app**
+
+```bash
+docker-compose up -d
+# or: uvicorn src.main:app --host 0.0.0.0 --port 8000
+```
+
+**4. Register the Stripe webhook**
+
+Point `https://your-domain.com/billing/webhook` in your Stripe Dashboard to
+receive: `customer.subscription.created`, `invoice.paid`,
+`customer.subscription.deleted`.
+
+**5. Serve the landing page**
+
+```bash
+# Serve landing/index.html with any static host (Netlify, Vercel, GitHub Pages)
+# or mount it from FastAPI with StaticFiles
+```
+
+### Billing API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/billing/subscribe` | Create Stripe Checkout session |
+| `POST` | `/billing/webhook` | Handle verified Stripe events |
+| `GET`  | `/billing/status?stripe_customer_id=…` | Subscription status |
+
 ## 🔗 Related Projects
 
 - [autonomous-event-mesh](https://github.com/Garrettc123/autonomous-event-mesh) - Event streaming
