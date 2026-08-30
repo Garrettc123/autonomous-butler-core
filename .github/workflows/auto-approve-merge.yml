@@ -17,6 +17,8 @@ jobs:
     if: github.event.pull_request || github.event.workflow_run.conclusion == 'success'
     steps:
       - name: Approve PR
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
         uses: hmarr/auto-approve-action@v3
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
