@@ -1,107 +1,116 @@
 {
   "garcar_integration_registry": {
-    "version": "2.0.0",
-    "last_updated": "2026-08-30T21:50:00Z",
+    "version": "3.0.0",
+    "last_updated": "2026-08-30T22:00:00Z",
     "owner": "Garrettc123",
     "system": "autonomous-butler-core",
+    "total_platforms": 14,
     "platforms": {
       "github": {
         "role": "Source Control & CI/CD Orchestrator",
         "env_vars": ["GITHUB_TOKEN", "GITHUB_ORG", "GITHUB_WEBHOOK_SECRET"],
-        "webhook_events": ["push", "pull_request", "release", "workflow_run"],
         "butler_agents": ["DevOpsAgent", "SecurityAgent", "PMAgent"],
-        "data_flow": "GitHub → webhook → butler_event_bus → agent_dispatch",
-        "repos_managed": 263,
-        "status": "ACTIVE"
+        "status": "ACTIVE",
+        "module": "integrations/github_integration.py"
       },
       "slack": {
-        "role": "Real-time Notifications & Human-in-the-Loop Commands",
-        "env_vars": ["SLACK_BOT_TOKEN", "SLACK_SIGNING_SECRET", "SLACK_CHANNEL_REVENUE", "SLACK_CHANNEL_OPS", "SLACK_CHANNEL_ALERTS"],
-        "channels": {
-          "revenue": "#garcar-revenue",
-          "ops": "#garcar-ops",
-          "alerts": "#garcar-alerts",
-          "ai": "#garcar-ai"
-        },
-        "butler_agents": ["SupportAgent", "RevenueOpsAgent", "AllAgents"],
-        "data_flow": "agent_event → slack_notifier → channel_post + slash_command_handler → agent_trigger",
-        "status": "ACTIVE"
+        "role": "Real-time Notifications & Commands",
+        "env_vars": ["SLACK_BOT_TOKEN", "SLACK_SIGNING_SECRET", "SLACK_CHANNEL_REVENUE", "SLACK_CHANNEL_ALERTS"],
+        "butler_agents": ["AllAgents"],
+        "status": "ACTIVE",
+        "module": "integrations/slack_integration.py"
       },
       "base_coinbase": {
-        "role": "Web3 Revenue Rail & On-Chain Settlement",
-        "env_vars": ["BASE_RPC_URL", "COINBASE_CDP_API_KEY", "COINBASE_CDP_API_SECRET", "GARCAR_WALLET_ADDRESS", "BASE_CHAIN_ID"],
-        "chain": "Base Mainnet (Chain ID: 8453)",
-        "capabilities": ["USDC on-chain payments", "Smart contract revenue triggers", "AgentKit wallet automation", "CDP SDK autonomous transactions"],
-        "butler_agents": ["RevenueOpsAgent", "FinanceAgent"],
-        "data_flow": "Stripe_payment → base_settlement → CDP_wallet → gc_ledger → Supabase_record",
-        "contracts": {
-          "usdc_base": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
-        },
-        "status": "ACTIVE"
+        "role": "Web3 On-Chain Revenue Settlement",
+        "env_vars": ["COINBASE_CDP_API_KEY", "COINBASE_CDP_API_SECRET", "GARCAR_WALLET_ADDRESS"],
+        "butler_agents": ["RevenueOpsAgent"],
+        "status": "ACTIVE",
+        "module": "integrations/base_coinbase_integration.py",
+        "chain": "Base Mainnet (8453)"
       },
       "shopify": {
-        "role": "E-Commerce Storefront & Product Revenue",
-        "env_vars": ["SHOPIFY_STORE_URL", "SHOPIFY_ADMIN_API_KEY", "SHOPIFY_STOREFRONT_TOKEN", "SHOPIFY_WEBHOOK_SECRET"],
-        "webhook_events": ["orders/create", "orders/paid", "products/create", "refunds/create", "customers/create"],
+        "role": "E-Commerce Storefront & Orders",
+        "env_vars": ["SHOPIFY_ADMIN_API_KEY", "SHOPIFY_WEBHOOK_SECRET"],
         "butler_agents": ["RevenueOpsAgent", "SupportAgent"],
-        "data_flow": "order_created → shopify_webhook → revenue_ops_agent → ledger_update + Linear_issue_create + Slack_notify",
-        "status": "ACTIVE"
+        "status": "ACTIVE",
+        "module": "integrations/shopify_integration.py"
       },
       "notion": {
-        "role": "Knowledge Base & Autonomous Documentation",
-        "env_vars": ["NOTION_API_KEY", "NOTION_WORKSPACE_ID", "NOTION_REVENUE_DB_ID", "NOTION_OPS_DB_ID", "NOTION_PROJECTS_DB_ID"],
-        "databases": {
-          "revenue_log": "Revenue transactions & pipeline",
-          "ops_runbooks": "Agent runbooks & SOPs",
-          "system_registry": "263-repo master map",
-          "decisions_log": "Autonomous decision audit trail"
-        },
+        "role": "Autonomous Knowledge Base & Documentation",
+        "env_vars": ["NOTION_API_KEY", "NOTION_REVENUE_DB_ID", "NOTION_OPS_DB_ID"],
         "butler_agents": ["PMAgent", "AllAgents"],
-        "data_flow": "agent_action → notion_writer → database_page_create/update",
-        "status": "ACTIVE"
+        "status": "ACTIVE",
+        "module": "integrations/notion_integration.py"
       },
       "linear": {
-        "role": "Project Management & Sprint Orchestration",
-        "env_vars": ["LINEAR_API_KEY", "LINEAR_TEAM_ID", "LINEAR_PROJECT_REVENUE_ID", "LINEAR_PROJECT_INFRA_ID"],
-        "auto_issue_triggers": [
-          "new_shopify_order → fulfillment_issue",
-          "github_workflow_failure → devops_issue",
-          "lead_enrichment_match → sales_issue",
-          "security_alert → security_issue",
-          "revenue_below_threshold → ops_issue"
-        ],
-        "butler_agents": ["PMAgent", "DevOpsAgent", "RevenueOpsAgent"],
-        "data_flow": "system_event → linear_issue_creator → assign_agent → auto_resolve_or_escalate",
-        "status": "ACTIVE"
+        "role": "Engineering Sprint Orchestration",
+        "env_vars": ["LINEAR_API_KEY", "LINEAR_TEAM_ID"],
+        "butler_agents": ["PMAgent", "DevOpsAgent"],
+        "status": "ACTIVE",
+        "module": "integrations/linear_integration.py"
       },
       "supabase": {
-        "role": "Primary Operational Database & Real-time Event Store",
-        "env_vars": ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_ANON_KEY", "SUPABASE_JWT_SECRET"],
-        "tables": {
-          "gc_ledger": "Revenue transactions",
-          "agent_events": "Butler agent action log",
-          "leads": "Enriched lead pipeline",
-          "integrations_health": "Platform heartbeat status",
-          "tenants": "Multi-tenant customer records",
-          "decisions": "Autonomous decision audit log"
-        },
-        "realtime_channels": ["revenue_events", "agent_status", "alert_stream"],
+        "role": "Primary Event Store & Revenue Ledger",
+        "env_vars": ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"],
         "butler_agents": ["AllAgents"],
-        "data_flow": "all_events → supabase_writer → realtime_broadcast → dashboard_update",
-        "status": "ACTIVE"
+        "status": "ACTIVE",
+        "module": "integrations/supabase_integration.py"
       },
       "huggingface": {
-        "role": "AI Model Hub & Inference Engine",
-        "env_vars": ["HUGGINGFACE_API_TOKEN", "HF_MODEL_REPO", "HF_INFERENCE_ENDPOINT"],
-        "models": {
-          "lead_scorer": "garrettc123/lead-scoring-model",
-          "deal_classifier": "garrettc123/deal-pipeline-classifier",
-          "doc_embedder": "sentence-transformers/all-MiniLM-L6-v2",
-          "code_reviewer": "bigcode/starcoder2-7b"
-        },
-        "butler_agents": ["RevenueOpsAgent", "DevOpsAgent", "PMAgent"],
-        "data_flow": "raw_lead_data → hf_inference → scored_lead → linear_issue + supabase_record",
-        "status": "ACTIVE"
+        "role": "AI Inference — Lead Scoring & Code Review",
+        "env_vars": ["HUGGINGFACE_API_TOKEN"],
+        "butler_agents": ["RevenueOpsAgent", "DevOpsAgent"],
+        "status": "ACTIVE",
+        "module": "integrations/huggingface_integration.py"
+      },
+      "wix": {
+        "role": "Website Storefront & Contact Sync",
+        "env_vars": ["WIX_API_KEY", "WIX_SITE_ID", "WIX_ACCOUNT_ID"],
+        "butler_agents": ["RevenueOpsAgent"],
+        "status": "ACTIVE",
+        "module": "integrations/wix_integration.py"
+      },
+      "hubspot": {
+        "role": "CRM — Contacts, Deals & Pipeline",
+        "env_vars": ["HUBSPOT_PRIVATE_APP_TOKEN", "HUBSPOT_PORTAL_ID", "HUBSPOT_PIPELINE_ID"],
+        "butler_agents": ["RevenueOpsAgent", "SupportAgent"],
+        "status": "ACTIVE",
+        "module": "integrations/hubspot_integration.py"
+      },
+      "apollo": {
+        "role": "Lead Sourcing & Outbound Sequences",
+        "env_vars": ["APOLLO_API_KEY", "APOLLO_ORG_ID", "APOLLO_SEQUENCE_OUTBOUND_ID"],
+        "butler_agents": ["RevenueOpsAgent"],
+        "status": "ACTIVE",
+        "module": "integrations/apollo_integration.py"
+      },
+      "docusign": {
+        "role": "Autonomous Contract & NDA Execution",
+        "env_vars": ["DOCUSIGN_INTEGRATION_KEY", "DOCUSIGN_ACCOUNT_ID", "DOCUSIGN_RSA_PRIVATE_KEY"],
+        "butler_agents": ["RevenueOpsAgent", "PMAgent"],
+        "status": "ACTIVE",
+        "module": "integrations/docusign_integration.py"
+      },
+      "google_tasks": {
+        "role": "Lightweight Task Tracking & Reminders",
+        "env_vars": ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REFRESH_TOKEN", "GOOGLE_TASKS_TASKLIST_ID"],
+        "butler_agents": ["PMAgent"],
+        "status": "ACTIVE",
+        "module": "integrations/google_tasks_integration.py"
+      },
+      "clickup": {
+        "role": "Operational Task Board",
+        "env_vars": ["CLICKUP_API_TOKEN", "CLICKUP_LIST_REVENUE_ID", "CLICKUP_LIST_DEVOPS_ID"],
+        "butler_agents": ["PMAgent", "DevOpsAgent"],
+        "status": "ACTIVE",
+        "module": "integrations/clickup_integration.py"
+      },
+      "asana": {
+        "role": "Project Portfolio Management",
+        "env_vars": ["ASANA_PERSONAL_ACCESS_TOKEN", "ASANA_WORKSPACE_ID", "ASANA_PROJECT_REVENUE_GID"],
+        "butler_agents": ["PMAgent"],
+        "status": "ACTIVE",
+        "module": "integrations/asana_integration.py"
       }
     }
   }
