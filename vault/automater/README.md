@@ -1,37 +1,44 @@
 # Unprecedented Vault Agent Automater
 
-Zero-touch, self-driving secrets system for the entire Garcar 14-platform stack.
-
-## What it does
-
-- Detects runtime (Docker Compose / Kubernetes / GitHub Actions)
-- Automatically selects optimal auth + injection method
-- Renders every platform secret from `secret/data/garcar/*`
-- Continuously renews leases and re-renders secrets
-- Self-heals and alerts on Vault unavailability
-- Requires zero ongoing human intervention after bootstrap
-
-## Quick Start
+**Single command. Full cutover. Zero ongoing intervention.**
 
 ```bash
-# 1. Bootstrap Vault roles + policies (run once)
-./vault/automater/bootstrap.sh
-
-# 2. Write your real secrets into Vault (you do this)
-#    See vault/secret-paths.md
-
-# 3. Choose your runtime:
-
-# Docker Compose
-docker compose -f docker-compose.yml -f vault/automater/docker-compose.automater.yml up -d
-
-# Kubernetes
-kubectl apply -f vault/automater/k8s/
-# or patch existing Deployment with generated annotations
-
-# GitHub Actions
-# Already wired via vault-secrets.yml + secrets-validation.yml
+export VAULT_ADDR=https://your-vault:8200
+export VAULT_TOKEN=hvs.xxxxx          # admin token, bootstrap only
+./vault/automater/automate-all.sh
 ```
+
+That script:
+
+1. Bootstraps policies + JWT + AppRole + Kubernetes auth roles
+2. Generates AppRole credentials for the Agent sidecar
+3. Ensures all 14 `secret/garcar/*` paths exist
+4. Generates full Kubernetes annotations
+5. Prints the exact remaining human steps (write secrets + set VAULT_ADDR in GitHub)
+
+## What is already automated in the repo
+
+| Layer | Status |
+|-------|--------|
+| Vault policies + auth roles | `automate-all.sh` / `bootstrap.sh` |
+| GitHub Actions OIDC → Vault | `ci-cd.yml`, `deploy.yml`, `integration_health.yml`, `vault-secrets.yml`, `secrets-validation.yml` |
+| Docker Compose sidecar | `docker-compose.automater.yml` + `agent.hcl` + unified template |
+| Kubernetes Injector annotations | `k8s/annotations.yaml` + generator |
+| Health monitor + self-heal | `health-monitor.sh` |
+| Unified 14-platform template | `templates/all-platforms.ctmpl` |
+
+## Remaining human steps (cannot be automated)
+
+1. **Write real secrets into Vault**  
+   `vault kv put secret/garcar/<platform> KEY=value ...`  
+   See `vault/secret-paths.md`.
+
+2. **Add one GitHub secret**  
+   `VAULT_ADDR` = your Vault URL.
+
+3. (Optional) Delete the old platform secrets from GitHub Actions settings.
+
+After those three actions the entire stack — CI, Docker, Kubernetes — runs with zero static platform secrets and continuous automatic renewal.
 
 ## Architecture
 
