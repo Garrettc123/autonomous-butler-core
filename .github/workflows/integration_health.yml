@@ -1,0 +1,49 @@
+name: Integration Health Check
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'   # Every 15 minutes
+  workflow_dispatch:          # Manual trigger
+  push:
+    paths:
+      - 'integrations/**'
+
+jobs:
+  health_check:
+    runs-on: ubuntu-latest
+    name: Check All 8 Platform Integrations
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run integration health checks
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          COINBASE_CDP_API_KEY: ${{ secrets.COINBASE_CDP_API_KEY }}
+          GARCAR_WALLET_ADDRESS: ${{ secrets.GARCAR_WALLET_ADDRESS }}
+          SHOPIFY_ADMIN_API_KEY: ${{ secrets.SHOPIFY_ADMIN_API_KEY }}
+          NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          HUGGINGFACE_API_TOKEN: ${{ secrets.HUGGINGFACE_API_TOKEN }}
+        run: python integrations/integration_health_check.py
+
+      - name: Post status to Slack on failure
+        if: failure()
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          channel-id: ${{ secrets.SLACK_CHANNEL_ALERTS }}
+          slack-message: '🚨 Integration health check FAILED — review Actions log'
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
