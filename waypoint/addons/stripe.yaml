@@ -1,0 +1,11 @@
+name: stripe-revenue
+description: Attach Stripe revenue stack (prices, webhooks) — credentials from Vault path secret/data/garcar/stripe
+
+# No static secrets. Runtime and CI already read from Vault.
+variables:
+  - name: enable_acquisition
+    type: bool
+    default: true
+  - name: enable_usage_billing
+    type: bool
+    default: true

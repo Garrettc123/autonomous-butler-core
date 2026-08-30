@@ -1,0 +1,7 @@
+name: supabase
+description: Bind Supabase project — credentials from Vault path secret/data/garcar/supabase
+
+variables:
+  - name: project_ref
+    type: string
+    description: Optional override; default comes from Vault

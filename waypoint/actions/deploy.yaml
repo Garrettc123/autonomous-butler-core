@@ -1,0 +1,13 @@
+# HCP Waypoint Action — Deploy
+# Triggers the existing Vault-native CI/CD workflow
+name: deploy
+description: Build and deploy butler-core via GitHub Actions (Vault secrets)
+
+type: github-actions
+
+config:
+  repository: Garrettc123/autonomous-butler-core
+  workflow: ci-cd.yml
+  ref: main
+  inputs: {}
+  # workflow_dispatch is already defined on ci-cd.yml

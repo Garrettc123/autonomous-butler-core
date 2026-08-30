@@ -1,0 +1,10 @@
+# HCP Waypoint Action — Integration Health Check
+name: health-check
+description: Smoke-test all 14 platform integrations using Vault-sourced credentials
+
+type: github-actions
+
+config:
+  repository: Garrettc123/autonomous-butler-core
+  workflow: integration_health.yml
+  ref: main

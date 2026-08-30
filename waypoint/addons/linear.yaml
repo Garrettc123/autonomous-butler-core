@@ -1,0 +1,7 @@
+name: linear
+description: Bind Linear team/project — credentials from Vault path secret/data/garcar/linear
+
+variables:
+  - name: team_id
+    type: string
+    default: ""

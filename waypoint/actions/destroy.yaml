@@ -1,0 +1,9 @@
+# HCP Waypoint Action — Destroy
+name: destroy
+description: Destroy the application infrastructure via HCP Terraform
+
+type: terraform-destroy
+
+config:
+  # Bound to the HCP Terraform workspace linked to this Waypoint application
+  confirm: true

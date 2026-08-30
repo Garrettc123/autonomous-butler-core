@@ -1,0 +1,7 @@
+name: slack-alerts
+description: Wire Slack alert channel — token from Vault path secret/data/garcar/slack
+
+variables:
+  - name: channel_alerts
+    type: string
+    default: ""
