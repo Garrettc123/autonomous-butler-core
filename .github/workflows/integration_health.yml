@@ -1,4 +1,4 @@
-name: Integration Health Check — 14 Platforms
+name: Integration Health Check — 14 Platforms (Vault-native)
 
 on:
   schedule:
@@ -7,15 +7,57 @@ on:
   push:
     paths:
       - 'integrations/**'
+      - 'vault/**'
+      - '.github/workflows/integration_health.yml'
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  VAULT_ADDR: ${{ secrets.VAULT_ADDR }}
 
 jobs:
   health_check:
     runs-on: ubuntu-latest
-    name: Check All 14 Platform Integrations
+    name: Check All 14 Platform Integrations via Vault
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Require VAULT_ADDR
+        run: |
+          if [ -z "${{ env.VAULT_ADDR }}" ]; then
+            echo "::error::VAULT_ADDR is not set. Add it to repository secrets."
+            exit 1
+          fi
+
+      - name: Import ALL secrets from Vault
+        uses: hashicorp/vault-action@v3.0.0
+        with:
+          url: ${{ env.VAULT_ADDR }}
+          method: jwt
+          role: garcar-github-actions
+          secrets: |
+            secret/data/garcar/ai * ;
+            secret/data/garcar/github * ;
+            secret/data/garcar/slack * ;
+            secret/data/garcar/base * ;
+            secret/data/garcar/shopify * ;
+            secret/data/garcar/notion * ;
+            secret/data/garcar/linear * ;
+            secret/data/garcar/supabase * ;
+            secret/data/garcar/wix * ;
+            secret/data/garcar/hubspot * ;
+            secret/data/garcar/apollo * ;
+            secret/data/garcar/docusign * ;
+            secret/data/garcar/google * ;
+            secret/data/garcar/clickup * ;
+            secret/data/garcar/asana * ;
+            secret/data/garcar/stripe * ;
+            secret/data/garcar/enrichment * ;
+            secret/data/garcar/infra * ;
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
@@ -26,67 +68,13 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run integration health checks
-        env:
-          # GitHub
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_WEBHOOK_SECRET: ${{ secrets.GITHUB_WEBHOOK_SECRET }}
-          # Slack
-          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
-          SLACK_CHANNEL_ALERTS: ${{ secrets.SLACK_CHANNEL_ALERTS }}
-          # Base / Coinbase
-          COINBASE_CDP_API_KEY: ${{ secrets.COINBASE_CDP_API_KEY }}
-          COINBASE_CDP_API_SECRET: ${{ secrets.COINBASE_CDP_API_SECRET }}
-          GARCAR_WALLET_ADDRESS: ${{ secrets.GARCAR_WALLET_ADDRESS }}
-          # Shopify
-          SHOPIFY_ADMIN_API_KEY: ${{ secrets.SHOPIFY_ADMIN_API_KEY }}
-          SHOPIFY_WEBHOOK_SECRET: ${{ secrets.SHOPIFY_WEBHOOK_SECRET }}
-          # Notion
-          NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
-          NOTION_REVENUE_DB_ID: ${{ secrets.NOTION_REVENUE_DB_ID }}
-          NOTION_OPS_DB_ID: ${{ secrets.NOTION_OPS_DB_ID }}
-          NOTION_PROJECTS_DB_ID: ${{ secrets.NOTION_PROJECTS_DB_ID }}
-          # Linear
-          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
-          LINEAR_TEAM_ID: ${{ secrets.LINEAR_TEAM_ID }}
-          # Supabase
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          # Hugging Face
-          HUGGINGFACE_API_TOKEN: ${{ secrets.HUGGINGFACE_API_TOKEN }}
-          # Wix
-          WIX_API_KEY: ${{ secrets.WIX_API_KEY }}
-          WIX_SITE_ID: ${{ secrets.WIX_SITE_ID }}
-          WIX_ACCOUNT_ID: ${{ secrets.WIX_ACCOUNT_ID }}
-          # HubSpot
-          HUBSPOT_PRIVATE_APP_TOKEN: ${{ secrets.HUBSPOT_PRIVATE_APP_TOKEN }}
-          HUBSPOT_PORTAL_ID: ${{ secrets.HUBSPOT_PORTAL_ID }}
-          HUBSPOT_PIPELINE_ID: ${{ secrets.HUBSPOT_PIPELINE_ID }}
-          # Apollo.io
-          APOLLO_API_KEY: ${{ secrets.APOLLO_API_KEY }}
-          APOLLO_SEQUENCE_OUTBOUND_ID: ${{ secrets.APOLLO_SEQUENCE_OUTBOUND_ID }}
-          # DocuSign
-          DOCUSIGN_INTEGRATION_KEY: ${{ secrets.DOCUSIGN_INTEGRATION_KEY }}
-          DOCUSIGN_ACCOUNT_ID: ${{ secrets.DOCUSIGN_ACCOUNT_ID }}
-          DOCUSIGN_RSA_PRIVATE_KEY: ${{ secrets.DOCUSIGN_RSA_PRIVATE_KEY }}
-          # Google Tasks
-          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
-          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
-          GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
-          GOOGLE_TASKS_TASKLIST_ID: ${{ secrets.GOOGLE_TASKS_TASKLIST_ID }}
-          # ClickUp
-          CLICKUP_API_TOKEN: ${{ secrets.CLICKUP_API_TOKEN }}
-          CLICKUP_LIST_REVENUE_ID: ${{ secrets.CLICKUP_LIST_REVENUE_ID }}
-          # Asana
-          ASANA_PERSONAL_ACCESS_TOKEN: ${{ secrets.ASANA_PERSONAL_ACCESS_TOKEN }}
-          ASANA_WORKSPACE_ID: ${{ secrets.ASANA_WORKSPACE_ID }}
-          ASANA_PROJECT_REVENUE_GID: ${{ secrets.ASANA_PROJECT_REVENUE_GID }}
         run: python integrations/integration_health_check.py
 
       - name: Notify Slack on failure
         if: failure()
         uses: slackapi/slack-github-action@v1.26.0
         with:
-          channel-id: ${{ secrets.SLACK_CHANNEL_ALERTS }}
-          slack-message: '🚨 Integration health check FAILED for one or more platforms — check Actions log immediately'
+          channel-id: ${{ env.SLACK_CHANNEL_ALERTS }}
+          slack-message: '🚨 Integration health check FAILED — Vault secrets or platform connectivity issue'
         env:
-          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_BOT_TOKEN: ${{ env.SLACK_BOT_TOKEN }}

@@ -1,4 +1,4 @@
-name: Autonomous Butler Core - CI/CD
+name: Autonomous Butler Core - CI/CD (Vault-native)
 
 on:
   push:
@@ -7,14 +7,91 @@ on:
     branches: [main]
   workflow_dispatch:
   schedule:
-    - cron: '0 */1 * * *'  # Every hour - CRITICAL
+    - cron: '0 */1 * * *'
+
+permissions:
+  id-token: write   # Required for Vault OIDC JWT
+  contents: read
+  packages: write
 
 env:
   IMAGE_NAME: ghcr.io/${{ github.repository }}
-  # Default ICP so acquisition is not a pure no-op when the var is unset
   DEFAULT_ICP_KEYWORDS: devops,platform-engineering,sre,ai-ops,kubernetes
+  VAULT_ADDR: ${{ secrets.VAULT_ADDR }}
 
 jobs:
+  # ── Vault secret pull (runs first on every job that needs secrets) ──
+  vault-secrets:
+    name: "Pull secrets from Vault"
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    outputs:
+      has_vault: ${{ steps.check.outputs.has_vault }}
+    steps:
+      - name: Check VAULT_ADDR
+        id: check
+        run: |
+          if [ -z "${{ env.VAULT_ADDR }}" ]; then
+            echo "has_vault=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::VAULT_ADDR not set — falling back to legacy GitHub secrets (not recommended)"
+          else
+            echo "has_vault=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Import ALL Garcar secrets from Vault
+        if: steps.check.outputs.has_vault == 'true'
+        id: vault
+        uses: hashicorp/vault-action@v3.0.0
+        with:
+          url: ${{ env.VAULT_ADDR }}
+          method: jwt
+          role: garcar-github-actions
+          secrets: |
+            secret/data/garcar/ai * ;
+            secret/data/garcar/github * ;
+            secret/data/garcar/slack * ;
+            secret/data/garcar/base * ;
+            secret/data/garcar/shopify * ;
+            secret/data/garcar/notion * ;
+            secret/data/garcar/linear * ;
+            secret/data/garcar/supabase * ;
+            secret/data/garcar/wix * ;
+            secret/data/garcar/hubspot * ;
+            secret/data/garcar/apollo * ;
+            secret/data/garcar/docusign * ;
+            secret/data/garcar/google * ;
+            secret/data/garcar/clickup * ;
+            secret/data/garcar/asana * ;
+            secret/data/garcar/stripe * ;
+            secret/data/garcar/enrichment * ;
+            secret/data/garcar/infra * ;
+
+      - name: Fail if critical secrets missing
+        if: steps.check.outputs.has_vault == 'true'
+        run: |
+          set -e
+          required=(
+            ANTHROPIC_API_KEY
+            GITHUB_TOKEN
+            STRIPE_SECRET_KEY
+            SLACK_BOT_TOKEN
+            LINEAR_API_KEY
+          )
+          missing=0
+          for var in "${required[@]}"; do
+            if [ -z "${!var}" ]; then
+              echo "❌ Missing critical secret from Vault: $var"
+              missing=1
+            else
+              echo "✅ $var present"
+            fi
+          done
+          if [ $missing -eq 1 ]; then
+            echo "::error::Critical secrets missing from Vault — aborting"
+            exit 1
+          fi
+          echo "All critical secrets successfully loaded from Vault"
+
   test:
     name: "Test Agent Orchestration"
     runs-on: ubuntu-latest
@@ -36,9 +113,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: [test]
     if: github.event_name != 'pull_request'
-    permissions:
-      contents: read
-      packages: write
     outputs:
       image: ${{ steps.meta.outputs.image }}
     steps:
@@ -57,7 +131,6 @@ jobs:
         id: meta
         shell: bash
         run: |
-          # GHCR rejects uppercase image paths, so lowercase the repository name.
           echo "image=${IMAGE_NAME,,}" >> "$GITHUB_OUTPUT"
       - name: Build and push
         uses: docker/build-push-action@v6
@@ -70,10 +143,10 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # ── Resolve revenue credentials once for both deploy targets ──────────────
   resolve-secrets:
-    name: "Resolve production secrets"
+    name: "Resolve production secrets (Vault-first)"
     runs-on: ubuntu-latest
+    needs: [vault-secrets]
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     outputs:
       icp: ${{ steps.resolve.outputs.icp }}
@@ -81,39 +154,48 @@ jobs:
       has_github_pat: ${{ steps.resolve.outputs.has_github_pat }}
       has_kube: ${{ steps.resolve.outputs.has_kube }}
       has_railway: ${{ steps.resolve.outputs.has_railway }}
+      has_vault: ${{ needs.vault-secrets.outputs.has_vault }}
     steps:
+      - name: Import from Vault (if available)
+        if: needs.vault-secrets.outputs.has_vault == 'true'
+        uses: hashicorp/vault-action@v3.0.0
+        with:
+          url: ${{ env.VAULT_ADDR }}
+          method: jwt
+          role: garcar-github-actions
+          secrets: |
+            secret/data/garcar/stripe * ;
+            secret/data/garcar/enrichment * ;
+            secret/data/garcar/infra * ;
+            secret/data/garcar/github * ;
+
       - name: Resolve
         id: resolve
         env:
           ICP_FROM_VARS: ${{ vars.ICP_KEYWORDS }}
-          STRIPE_ACQUISITION_PRICE_ID: ${{ secrets.STRIPE_ACQUISITION_PRICE_ID }}
-          GH_PAT: ${{ secrets.GH_PAT }}
-          GITHUB_PAT: ${{ secrets.GITHUB_PAT }}
+          # Prefer Vault values; fall back to legacy GitHub secrets only if Vault not configured
+          STRIPE_ACQUISITION_PRICE_ID: ${{ env.STRIPE_ACQUISITION_PRICE_ID || secrets.STRIPE_ACQUISITION_PRICE_ID }}
+          GH_PAT: ${{ env.GITHUB_TOKEN || secrets.GH_PAT || secrets.GITHUB_PAT }}
           KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: |
-          # ICP_KEYWORDS: repo variable preferred, else production default
           if [ -n "$ICP_FROM_VARS" ]; then
             echo "icp=$ICP_FROM_VARS" >> "$GITHUB_OUTPUT"
-            echo "Using ICP_KEYWORDS from repo variable"
           else
             echo "icp=${{ env.DEFAULT_ICP_KEYWORDS }}" >> "$GITHUB_OUTPUT"
-            echo "Using default ICP_KEYWORDS (${{ env.DEFAULT_ICP_KEYWORDS }})"
           fi
 
           if [ -n "$STRIPE_ACQUISITION_PRICE_ID" ]; then
             echo "has_acquisition=true" >> "$GITHUB_OUTPUT"
           else
             echo "has_acquisition=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::STRIPE_ACQUISITION_PRICE_ID not set — acquisition will qualify leads but will not invoice"
+            echo "::warning::STRIPE_ACQUISITION_PRICE_ID not set"
           fi
 
-          # Prefer explicit PAT secrets over the automatic GITHUB_TOKEN
-          if [ -n "$GH_PAT" ] || [ -n "$GITHUB_PAT" ]; then
+          if [ -n "$GH_PAT" ]; then
             echo "has_github_pat=true" >> "$GITHUB_OUTPUT"
           else
             echo "has_github_pat=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::Neither GH_PAT nor GITHUB_PAT is set — lead discovery will use limited Actions token or no-op"
           fi
 
           if [ -n "$KUBE_CONFIG" ]; then
@@ -131,11 +213,26 @@ jobs:
   deploy-k8s:
     name: "Deploy Butler Core (Kubernetes)"
     runs-on: ubuntu-latest
-    needs: [build, resolve-secrets]
+    needs: [build, resolve-secrets, vault-secrets]
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && needs.resolve-secrets.outputs.has_kube == 'true'
     environment: production
     steps:
       - uses: actions/checkout@v4
+
+      - name: Import secrets from Vault
+        if: needs.vault-secrets.outputs.has_vault == 'true'
+        uses: hashicorp/vault-action@v3.0.0
+        with:
+          url: ${{ env.VAULT_ADDR }}
+          method: jwt
+          role: garcar-github-actions
+          secrets: |
+            secret/data/garcar/ai * ;
+            secret/data/garcar/github * ;
+            secret/data/garcar/slack * ;
+            secret/data/garcar/stripe * ;
+            secret/data/garcar/enrichment * ;
+            secret/data/garcar/linear * ;
 
       - name: Configure kubectl
         env:
@@ -145,21 +242,21 @@ jobs:
           echo "$KUBE_CONFIG" | base64 -d > "$HOME/.kube/config"
           chmod 600 "$HOME/.kube/config"
 
-      - name: Apply manifests
+      - name: Apply manifests + secrets from Vault
         env:
-          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
-          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
-          STRIPE_USAGE_PRICE_ID: ${{ secrets.STRIPE_USAGE_PRICE_ID }}
-          STRIPE_ACQUISITION_PRICE_ID: ${{ secrets.STRIPE_ACQUISITION_PRICE_ID }}
-          CLEARBIT_API_KEY: ${{ secrets.CLEARBIT_API_KEY }}
-          HUNTER_API_KEY: ${{ secrets.HUNTER_API_KEY }}
+          # Values come from Vault when available, otherwise legacy secrets
+          STRIPE_SECRET_KEY: ${{ env.STRIPE_SECRET_KEY || secrets.STRIPE_SECRET_KEY }}
+          STRIPE_WEBHOOK_SECRET: ${{ env.STRIPE_WEBHOOK_SECRET || secrets.STRIPE_WEBHOOK_SECRET }}
+          STRIPE_USAGE_PRICE_ID: ${{ env.STRIPE_USAGE_PRICE_ID || secrets.STRIPE_USAGE_PRICE_ID }}
+          STRIPE_ACQUISITION_PRICE_ID: ${{ env.STRIPE_ACQUISITION_PRICE_ID || secrets.STRIPE_ACQUISITION_PRICE_ID }}
+          CLEARBIT_API_KEY: ${{ env.CLEARBIT_API_KEY || secrets.CLEARBIT_API_KEY }}
+          HUNTER_API_KEY: ${{ env.HUNTER_API_KEY || secrets.HUNTER_API_KEY }}
           ICP_KEYWORDS: ${{ needs.resolve-secrets.outputs.icp }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-          # Prefer GH_PAT / GITHUB_PAT; fall back to automatic token
-          LEAD_GITHUB_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_PAT || secrets.GITHUB_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ env.ANTHROPIC_API_KEY || secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ env.OPENAI_API_KEY || secrets.OPENAI_API_KEY }}
+          LINEAR_API_KEY: ${{ env.LINEAR_API_KEY || secrets.LINEAR_API_KEY }}
+          SLACK_WEBHOOK_URL: ${{ env.SLACK_WEBHOOK_URL || secrets.SLACK_WEBHOOK_URL }}
+          LEAD_GITHUB_TOKEN: ${{ env.GITHUB_TOKEN || secrets.GH_PAT || secrets.GITHUB_PAT || secrets.GITHUB_TOKEN }}
         run: |
           kubectl apply -f k8s/namespace.yaml
 
@@ -202,11 +299,26 @@ jobs:
   deploy-railway:
     name: "Deploy Butler Core (Railway)"
     runs-on: ubuntu-latest
-    needs: [build, resolve-secrets]
+    needs: [build, resolve-secrets, vault-secrets]
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && needs.resolve-secrets.outputs.has_railway == 'true'
     environment: production
     steps:
       - uses: actions/checkout@v4
+
+      - name: Import secrets from Vault
+        if: needs.vault-secrets.outputs.has_vault == 'true'
+        uses: hashicorp/vault-action@v3.0.0
+        with:
+          url: ${{ env.VAULT_ADDR }}
+          method: jwt
+          role: garcar-github-actions
+          secrets: |
+            secret/data/garcar/ai * ;
+            secret/data/garcar/stripe * ;
+            secret/data/garcar/enrichment * ;
+            secret/data/garcar/linear * ;
+            secret/data/garcar/slack * ;
+            secret/data/garcar/github * ;
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -221,11 +333,10 @@ jobs:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: railway up --detach
 
-      - name: Sync revenue env vars to Railway
+      - name: Sync revenue env vars to Railway (Vault-first)
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: |
-          # Only set vars that are actually present so we never wipe live values with empties
           set_if_present() {
             local key="$1" value="$2"
             if [ -n "$value" ]; then
@@ -236,35 +347,35 @@ jobs:
             fi
           }
 
-          set_if_present STRIPE_SECRET_KEY '${{ secrets.STRIPE_SECRET_KEY }}'
-          set_if_present STRIPE_WEBHOOK_SECRET '${{ secrets.STRIPE_WEBHOOK_SECRET }}'
-          set_if_present STRIPE_USAGE_PRICE_ID '${{ secrets.STRIPE_USAGE_PRICE_ID }}'
-          set_if_present STRIPE_ACQUISITION_PRICE_ID '${{ secrets.STRIPE_ACQUISITION_PRICE_ID }}'
-          set_if_present CLEARBIT_API_KEY '${{ secrets.CLEARBIT_API_KEY }}'
-          set_if_present HUNTER_API_KEY '${{ secrets.HUNTER_API_KEY }}'
-          set_if_present ANTHROPIC_API_KEY '${{ secrets.ANTHROPIC_API_KEY }}'
-          set_if_present OPENAI_API_KEY '${{ secrets.OPENAI_API_KEY }}'
-          set_if_present LINEAR_API_KEY '${{ secrets.LINEAR_API_KEY }}'
-          set_if_present SLACK_WEBHOOK_URL '${{ secrets.SLACK_WEBHOOK_URL }}'
+          set_if_present STRIPE_SECRET_KEY "${STRIPE_SECRET_KEY:-${{ secrets.STRIPE_SECRET_KEY }}}"
+          set_if_present STRIPE_WEBHOOK_SECRET "${STRIPE_WEBHOOK_SECRET:-${{ secrets.STRIPE_WEBHOOK_SECRET }}}"
+          set_if_present STRIPE_USAGE_PRICE_ID "${STRIPE_USAGE_PRICE_ID:-${{ secrets.STRIPE_USAGE_PRICE_ID }}}"
+          set_if_present STRIPE_ACQUISITION_PRICE_ID "${STRIPE_ACQUISITION_PRICE_ID:-${{ secrets.STRIPE_ACQUISITION_PRICE_ID }}}"
+          set_if_present CLEARBIT_API_KEY "${CLEARBIT_API_KEY:-${{ secrets.CLEARBIT_API_KEY }}}"
+          set_if_present HUNTER_API_KEY "${HUNTER_API_KEY:-${{ secrets.HUNTER_API_KEY }}}"
+          set_if_present ANTHROPIC_API_KEY "${ANTHROPIC_API_KEY:-${{ secrets.ANTHROPIC_API_KEY }}}"
+          set_if_present OPENAI_API_KEY "${OPENAI_API_KEY:-${{ secrets.OPENAI_API_KEY }}}"
+          set_if_present LINEAR_API_KEY "${LINEAR_API_KEY:-${{ secrets.LINEAR_API_KEY }}}"
+          set_if_present SLACK_WEBHOOK_URL "${SLACK_WEBHOOK_URL:-${{ secrets.SLACK_WEBHOOK_URL }}}"
 
-          # Always push resolved ICP + preferred GitHub PAT
           railway variables set "ICP_KEYWORDS=${{ needs.resolve-secrets.outputs.icp }}"
-          railway variables set "GITHUB_TOKEN=${{ secrets.GH_PAT || secrets.GITHUB_PAT || secrets.GITHUB_TOKEN }}"
+          railway variables set "GITHUB_TOKEN=${GITHUB_TOKEN:-${{ secrets.GH_PAT || secrets.GITHUB_PAT || secrets.GITHUB_TOKEN }}}"
           railway variables set "REVENUE_STREAMS=all"
           railway variables set "ENVIRONMENT=production"
-          echo "Railway revenue env synced"
+          echo "Railway revenue env synced (Vault-first)"
 
   agent-status:
     name: "🤖 Agent Status Monitor"
     runs-on: ubuntu-latest
-    needs: [test, resolve-secrets]
+    needs: [test, resolve-secrets, vault-secrets]
     if: always()
     steps:
       - name: Agent Status
         run: |
-          echo "🤖 AUTONOMOUS BUTLER - MULTI-AGENT SYSTEM"
+          echo "🤖 AUTONOMOUS BUTLER - MULTI-AGENT SYSTEM (Vault-native)"
           echo "========================================"
           echo "Test suite: ${{ needs.test.result }}"
+          echo "Vault configured: ${{ needs.vault-secrets.outputs.has_vault }}"
           echo "ICP_KEYWORDS: ${{ needs.resolve-secrets.outputs.icp }}"
           echo "Acquisition price set: ${{ needs.resolve-secrets.outputs.has_acquisition }}"
           echo "GitHub PAT set: ${{ needs.resolve-secrets.outputs.has_github_pat }}"

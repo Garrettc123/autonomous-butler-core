@@ -1,13 +1,19 @@
-name: Zero-Touch Deployment Pipeline
+name: Zero-Touch Deployment Pipeline (Vault-native)
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  id-token: write
+  contents: read
+  packages: write
+
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  VAULT_ADDR: ${{ secrets.VAULT_ADDR }}
 
 jobs:
   test:
@@ -34,14 +40,45 @@ jobs:
         run: pytest tests/ --cov=src --cov-report=xml
         continue-on-error: true
 
+  vault-gate:
+    name: "Vault Gate — fail if secrets unavailable"
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Require VAULT_ADDR
+        run: |
+          if [ -z "${{ env.VAULT_ADDR }}" ]; then
+            echo "::error::VAULT_ADDR secret is missing. Pipeline cannot proceed without Vault."
+            exit 1
+          fi
+          echo "✅ VAULT_ADDR is configured"
+
+      - name: Pull critical secrets
+        uses: hashicorp/vault-action@v3.0.0
+        with:
+          url: ${{ env.VAULT_ADDR }}
+          method: jwt
+          role: garcar-github-actions
+          secrets: |
+            secret/data/garcar/ai ANTHROPIC_API_KEY ;
+            secret/data/garcar/stripe STRIPE_SECRET_KEY ;
+            secret/data/garcar/github GITHUB_TOKEN ;
+
+      - name: Verify critical secrets
+        run: |
+          for var in ANTHROPIC_API_KEY STRIPE_SECRET_KEY GITHUB_TOKEN; do
+            if [ -z "${!var}" ]; then
+              echo "❌ $var missing from Vault"
+              exit 1
+            fi
+            echo "✅ $var present"
+          done
+
   build-and-push:
     name: Build and Push Docker Image
     runs-on: ubuntu-latest
-    needs: [test]
+    needs: [test, vault-gate]
     if: github.ref == 'refs/heads/main'
-    permissions:
-      contents: read
-      packages: write
     steps:
       - uses: actions/checkout@v4
 
@@ -77,10 +114,8 @@ jobs:
   deploy-to-railway:
     name: Deploy to Railway
     runs-on: ubuntu-latest
-    needs: [build-and-push]
+    needs: [build-and-push, vault-gate]
     if: github.ref == 'refs/heads/main'
-    permissions:
-      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -99,11 +134,11 @@ jobs:
 
       - name: Deploy to Railway
         run: |
-          echo "🚀 Autonomous Butler Core deployment initiated"
+          echo "🚀 Autonomous Butler Core deployment initiated (Vault-native)"
           echo "✅ Image: ${{ env.REGISTRY }}/${{ github.repository }}:latest"
           echo "✅ Commit: ${{ github.sha }}"
           echo "✅ Branch: ${{ github.ref }}"
-          echo "✅ Railway auto-deploy will be triggered via git push"
+          echo "✅ Vault gate passed — secrets are available"
           echo "🎯 Deployment Details:"
           echo "   - Service: autonomous-butler-core"
           echo "   - Port: 8000"
