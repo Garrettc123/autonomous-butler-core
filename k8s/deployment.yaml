@@ -6,6 +6,7 @@ metadata:
   labels:
     app: butler-core
     version: "2.0"
+    secrets: vault-injector
 spec:
   replicas: 3
   strategy:
@@ -24,7 +25,50 @@ spec:
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/port: "8000"
+        # ── Vault Agent Injector (full-scale) ──
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/role: "garcar-runtime"
+        vault.hashicorp.com/agent-pre-populate: "true"
+        vault.hashicorp.com/agent-inject-status: "update"
+        # Render a unified .env from all critical platforms
+        vault.hashicorp.com/agent-inject-secret-env: "secret/data/garcar/ai"
+        vault.hashicorp.com/agent-inject-file-env: ".env"
+        vault.hashicorp.com/agent-inject-template-env: |
+          {{- with secret "secret/data/garcar/ai" -}}
+          ANTHROPIC_API_KEY={{ .Data.data.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY={{ .Data.data.OPENAI_API_KEY }}
+          HUGGINGFACE_API_TOKEN={{ .Data.data.HUGGINGFACE_API_TOKEN }}
+          {{- end }}
+          {{- with secret "secret/data/garcar/github" -}}
+          GITHUB_TOKEN={{ .Data.data.GITHUB_TOKEN }}
+          GITHUB_WEBHOOK_SECRET={{ .Data.data.GITHUB_WEBHOOK_SECRET }}
+          {{- end }}
+          {{- with secret "secret/data/garcar/slack" -}}
+          SLACK_BOT_TOKEN={{ .Data.data.SLACK_BOT_TOKEN }}
+          SLACK_WEBHOOK_URL={{ .Data.data.SLACK_WEBHOOK_URL }}
+          SLACK_CHANNEL_ALERTS={{ .Data.data.SLACK_CHANNEL_ALERTS }}
+          {{- end }}
+          {{- with secret "secret/data/garcar/stripe" -}}
+          STRIPE_SECRET_KEY={{ .Data.data.STRIPE_SECRET_KEY }}
+          STRIPE_WEBHOOK_SECRET={{ .Data.data.STRIPE_WEBHOOK_SECRET }}
+          STRIPE_USAGE_PRICE_ID={{ .Data.data.STRIPE_USAGE_PRICE_ID }}
+          STRIPE_ACQUISITION_PRICE_ID={{ .Data.data.STRIPE_ACQUISITION_PRICE_ID }}
+          {{- end }}
+          {{- with secret "secret/data/garcar/enrichment" -}}
+          CLEARBIT_API_KEY={{ .Data.data.CLEARBIT_API_KEY }}
+          HUNTER_API_KEY={{ .Data.data.HUNTER_API_KEY }}
+          ICP_KEYWORDS={{ .Data.data.ICP_KEYWORDS }}
+          {{- end }}
+          {{- with secret "secret/data/garcar/linear" -}}
+          LINEAR_API_KEY={{ .Data.data.LINEAR_API_KEY }}
+          {{- end }}
+          {{- with secret "secret/data/garcar/supabase" -}}
+          SUPABASE_URL={{ .Data.data.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY={{ .Data.data.SUPABASE_SERVICE_ROLE_KEY }}
+          {{- end }}
+          REVENUE_STREAMS=all
     spec:
+      serviceAccountName: butler-core
       containers:
       - name: butler-core
         image: ghcr.io/garrettc123/autonomous-butler-core:latest
@@ -35,60 +79,12 @@ spec:
         env:
         - name: ENVIRONMENT
           value: "production"
-        - name: ANTHROPIC_API_KEY
-          valueFrom:
-            secretKeyRef:
-              name: butler-secrets
-              key: anthropic-api-key
-        - name: GITHUB_TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: butler-secrets
-              key: github-token
-        - name: STRIPE_SECRET_KEY
-          valueFrom:
-            secretKeyRef:
-              name: butler-secrets
-              key: stripe-secret-key
-              optional: true
-        - name: STRIPE_WEBHOOK_SECRET
-          valueFrom:
-            secretKeyRef:
-              name: butler-secrets
-              key: stripe-webhook-secret
-              optional: true
-        - name: STRIPE_USAGE_PRICE_ID
-          valueFrom:
-            secretKeyRef:
-              name: butler-secrets
-              key: stripe-usage-price-id
-              optional: true
-        - name: STRIPE_ACQUISITION_PRICE_ID
-          valueFrom:
-            secretKeyRef:
-              name: butler-secrets
-              key: stripe-acquisition-price-id
-              optional: true
-        - name: CLEARBIT_API_KEY
-          valueFrom:
-            secretKeyRef:
-              name: butler-secrets
-              key: clearbit-api-key
-              optional: true
-        - name: HUNTER_API_KEY
-          valueFrom:
-            secretKeyRef:
-              name: butler-secrets
-              key: hunter-api-key
-              optional: true
-        - name: ICP_KEYWORDS
-          valueFrom:
-            secretKeyRef:
-              name: butler-secrets
-              key: icp-keywords
-              optional: true
+        - name: DOTENV_PATH
+          value: "/vault/secrets/.env"
         - name: REVENUE_STREAMS
           value: "all"
+        # Application loads secrets from /vault/secrets/.env rendered by the Injector.
+        # No static Kubernetes Secret references for platform keys.
         resources:
           requests:
             memory: "512Mi"

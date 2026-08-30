@@ -1,0 +1,32 @@
+# Patch any existing Deployment to enable Vault Agent Injector
+# Usage:
+#   kubectl patch deployment butler-core -n autonomous-butler --patch-file k8s/vault-injector-patch.yaml
+
+spec:
+  template:
+    metadata:
+      annotations:
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/role: "garcar-runtime"
+        vault.hashicorp.com/agent-pre-populate: "true"
+        vault.hashicorp.com/agent-inject-status: "update"
+        vault.hashicorp.com/agent-inject-secret-env: "secret/data/garcar/ai"
+        vault.hashicorp.com/agent-inject-file-env: ".env"
+        vault.hashicorp.com/agent-inject-template-env: |
+          {{- with secret "secret/data/garcar/ai" -}}
+          ANTHROPIC_API_KEY={{ .Data.data.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY={{ .Data.data.OPENAI_API_KEY }}
+          {{- end }}
+          {{- with secret "secret/data/garcar/github" -}}
+          GITHUB_TOKEN={{ .Data.data.GITHUB_TOKEN }}
+          {{- end }}
+          {{- with secret "secret/data/garcar/stripe" -}}
+          STRIPE_SECRET_KEY={{ .Data.data.STRIPE_SECRET_KEY }}
+          STRIPE_WEBHOOK_SECRET={{ .Data.data.STRIPE_WEBHOOK_SECRET }}
+          {{- end }}
+          {{- with secret "secret/data/garcar/slack" -}}
+          SLACK_BOT_TOKEN={{ .Data.data.SLACK_BOT_TOKEN }}
+          SLACK_WEBHOOK_URL={{ .Data.data.SLACK_WEBHOOK_URL }}
+          {{- end }}
+    spec:
+      serviceAccountName: butler-core
