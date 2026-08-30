@@ -46,7 +46,7 @@ vault write auth/jwt/role/garcar-github-actions \
   role_type="jwt" \
   bound_audiences="https://github.com/Garrettc123" \
   bound_claims_type="glob" \
-  bound_claims='{"repository":["Garrettc123/autonomous-butler-core","Garrettc123/NEXUS-AI-CORE","Garrettc123/apex-revenue-system","Garrettc123/garcar-payment-loop","Garrettc123/lead-enrichment-engine"]}' \
+  bound_claims='{"repository":["Garrettc123/autonomous-butler-core","Garrettc123/NEXUS-AI-CORE","Garrettc123/apex-revenue-system","Garrettc123/lead-enrichment-engine","Garrettc123/garcar-payments"]}' \
   user_claim="repository" \
   token_policies="garcar-github-actions" \
   token_ttl="15m" \
@@ -62,10 +62,9 @@ vault write auth/approle/role/garcar-runtime \
 
 echo "▶ Enabling Kubernetes auth (for Injector)"
 vault auth enable kubernetes 2>/dev/null || true
-# Note: complete Kubernetes auth config requires cluster CA + token reviewer JWT
-# Run the additional commands in vault/automater/k8s/configure-k8s-auth.sh after Injector is installed
+# Complete binding: vault/automater/k8s/configure-k8s-auth.sh
 
 echo ""
 echo "✅ Bootstrap complete."
-echo "Next: write real secrets with vault kv put secret/garcar/<platform> ..."
-echo "Then add only VAULT_ADDR to GitHub repository secrets."
+echo "JWT role bound to: autonomous-butler-core, NEXUS-AI-CORE, apex-revenue-system, lead-enrichment-engine, garcar-payments"
+echo "Next: write real secrets + add VAULT_ADDR to each repo's Actions secrets."
