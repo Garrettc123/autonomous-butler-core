@@ -35,6 +35,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 VERSION = "1.0.0"
+SYSTEM = "autonomous-butler-core"
+ROLE = "ai_orchestration"
+CONTRACT_VERSION = "1.0.0"
 
 TEMPLATES_DIR = Path(__file__).parent / "dashboard" / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
@@ -133,9 +136,22 @@ async def health_check() -> dict[str, Any]:
     all_ok = all(a["status"] in ("running", "initializing") for a in agents_health)
     return {
         "status": "healthy" if all_ok else "degraded",
+        "system": SYSTEM,
         "version": VERSION,
         "agents": agents_health,
         "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@app.get("/meta")
+async def meta() -> dict[str, Any]:
+    """Garcar Base Contract discovery endpoint."""
+    return {
+        "system": SYSTEM,
+        "role": ROLE,
+        "contract_version": CONTRACT_VERSION,
+        "endpoints": ["/health", "/meta", "/metrics", "/events"],
+        "event_bus_topic_schema": "garcar.{system}.{event_type}",
     }
 
 
