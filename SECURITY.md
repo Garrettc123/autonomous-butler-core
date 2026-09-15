@@ -1,21 +1,25 @@
 # Security Policy
 
-## Supported Versions
+## Reporting a vulnerability
 
-Use this section to tell people about which versions of your project are
-currently being supported with security updates.
+Do not publish credentials, exploit details, customer data, or other sensitive material in public issues.
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 5.1.x   | :white_check_mark: |
-| 5.0.x   | :x:                |
-| 4.0.x   | :white_check_mark: |
-| < 4.0   | :x:                |
+Use the repository's configured private vulnerability-reporting mechanism when available. If none is configured, open a minimal public issue containing only the affected component and the words `SECURITY REPORT NEEDED`; do not include exploit code or secrets.
 
-## Reporting a Vulnerability
+## Response objectives
 
-Use this section to tell people how to report a vulnerability.
+Security reports are triaged by severity and impact. Confirmed issues may result in deployment freezes, credential rotation, workload isolation, or emergency rollback.
 
-Tell them where to go, how often they can expect to get an update on a
-reported vulnerability, what to expect if the vulnerability is accepted or
-declined, etc.
+## Secret exposure
+
+If a secret is exposed, treat it as compromised immediately. Do not merely delete it from the current branch. Revoke/rotate it at the provider, invalidate dependent sessions where applicable, investigate access logs, and preserve incident evidence.
+
+## Scope
+
+The security boundary includes source code, CI/CD, cloud infrastructure, APIs, databases, secrets, AI agent tools, customer data, and deployment artifacts.
+
+## High-Assurance Controls (Palantir-type / Government-grade)
+- Least-privilege workflow permissions required.
+- SBOM (CycloneDX) generation for production artifacts.
+- All monetizing hops gated by RHNS CMC commit.
+- Detach and rollback path mandatory for every organ.
